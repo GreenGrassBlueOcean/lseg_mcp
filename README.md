@@ -1,5 +1,8 @@
 # LSEG-MCP Server
 
+[![CI Pipeline](https://github.com/GreenGrassBlueOcean/lseg_mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/GreenGrassBlueOcean/lseg_mcp/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/GreenGrassBlueOcean/lseg_mcp/graph/badge.svg)](https://codecov.io/gh/GreenGrassBlueOcean/lseg_mcp)
+
 `lseg-mcp` is an asynchronous, introspective Model Context Protocol (MCP) server that acts as a definitive bridge between LLMs and the London Stock Exchange Group (LSEG) data APIs.
 
 It enables AI agents to confidently draft perfectly formatted financial data retrieval pipelines in both Python (`lseg-data`) and R (`RefinitivR`).
