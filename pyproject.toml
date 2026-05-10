@@ -1,0 +1,25 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "lseg-mcp"
+version = "0.1.0"
+description = "MCP server that bridges Refinitiv Financials to LSEG Company Fundamentals via mapping-aware field resolution and live AST introspection of lseg-data (Python) and RefinitivR (R)."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp",
+    "fastmcp",
+    "pandas>=2.1,<2.3",
+    "gitpython",
+    "openpyxl"
+]
+
+[project.scripts]
+lseg-mcp = "lseg_mcp.server:main"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "--cov=src/lseg_mcp --cov-report=term-missing"
