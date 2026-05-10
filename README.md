@@ -70,6 +70,22 @@ run_server.cmd
 ./run_server.sh
 ```
 
+## Monitoring & Observability
+
+Because the server runs headlessly within the MCP client, all console outputs (like `git clone` or `pip install` progress) and JSON-RPC traffic are hidden.
+
+You can monitor the server's real-time internal status by tailing its log file. Open a separate terminal and run:
+
+**Windows (PowerShell):**
+```powershell
+Get-Content -Path .lseg_cache\startup.log -Wait
+```
+
+**macOS / Linux:**
+```bash
+tail -f .lseg_cache/startup.log
+```
+
 ## Testing
 
 The project maintains **98% absolute line coverage**. To run the test suite:
