@@ -178,7 +178,7 @@ The server binds to standard input/output (stdio) when executed as a module, ena
 
 **Quick Start:**
 ```bash
-git clone https://github.com/<org>/lseg-mcp.git
+git clone https://github.com/GreenGrassBlueOcean/lseg-mcp.git
 cd lseg-mcp
 pip install -e ".[dev]"
 # Windows
