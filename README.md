@@ -62,43 +62,45 @@ Following a comprehensive architectural audit, `lseg-mcp` has been hardened for 
 - Git
 - Access to LSEG Workspace (running in the background for live data retrieval)
 
-## Installation
-
-Clone the repository and install it in editable mode:
-
-```bash
-git clone https://github.com/GreenGrassBlueOcean/lseg-mcp.git
-cd lseg-mcp
-pip install -e ".[dev]"
-```
-
-## Configuration
+## Installation & Configuration
 
 The server operates over standard input/output (stdio) using the JSON-RPC 2.0 protocol.
 
-### MCP Client Configuration
+### One-Click Install (Recommended)
 
-Point your MCP client (like Claude Desktop or Antigravity) to the executable:
+You can run the server directly via `uvx` without needing to clone the repository. Point your MCP client (like Claude Desktop or Antigravity) directly to the package:
 
 ```json
 {
   "mcpServers": {
     "lseg-mcp": {
-      "command": "C:\\path\\to\\lseg_mcp\\.venv\\Scripts\\python.exe",
+      "command": "uvx",
       "args": [
-        "-m",
-        "lseg_mcp.server"
+        "lseg-mcp"
       ]
     }
   }
 }
 ```
 
+*Note: While the package is pending official PyPI publication, you can install directly from GitHub using:*
+`"command": "uvx", "args": ["--from", "git+https://github.com/GreenGrassBlueOcean/lseg_mcp.git", "lseg-mcp"]`
+
+### Development Installation
+
+If you wish to contribute to the server, you can clone and install it in editable mode:
+
+```bash
+git clone https://github.com/GreenGrassBlueOcean/lseg_mcp.git
+cd lseg_mcp
+pip install -e ".[dev]"
+```
+
 ### Environment Variables
 
-All paths are relative to the project root by default, but you can override them:
-- `LSEG_MAPPING_PATH`: Absolute path to the Excel mapping matrix.
-- `REFINITIVR_PATH`: Absolute path to the RefinitivR repository (cloned automatically if missing).
+The server automatically manages its own dependencies and mappings within your platform's local application data directory (e.g., `%LOCALAPPDATA%\lseg-mcp\` on Windows). However, you can explicitly override these paths:
+- `LSEG_MAPPING_PATH`: Absolute path to a custom Excel mapping matrix.
+- `REFINITIVR_PATH`: Absolute path to the RefinitivR repository (auto-cloned if missing).
 
 ## Running the Server Locally
 
@@ -122,12 +124,12 @@ You can monitor the server's real-time internal status by tailing its log file. 
 
 **Windows (PowerShell):**
 ```powershell
-Get-Content -Path .lseg_cache\startup.log -Wait
+Get-Content -Path "$env:LOCALAPPDATA\lseg-mcp\logs\startup.log" -Wait
 ```
 
 **macOS / Linux:**
 ```bash
-tail -f .lseg_cache/startup.log
+tail -f ~/.cache/lseg-mcp/logs/startup.log
 ```
 
 ## Testing
