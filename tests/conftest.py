@@ -197,5 +197,6 @@ def mock_pandas_read_excel(mocker, mock_mapping_data):
         return pd.DataFrame()
 
     mocker.patch("pandas.read_excel", side_effect=fake_read_excel)
-    # Also mock ExcelFile
-    mocker.patch("pandas.ExcelFile", return_value="dummy_xl")
+    mock_xl = mocker.MagicMock()
+    mock_xl.sheet_names = ["Explanations", "Standardized Financials ", "Segments ", "Aggregates"]
+    mocker.patch("pandas.ExcelFile", return_value=mock_xl)

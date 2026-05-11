@@ -129,7 +129,9 @@ def test_mapping_engine_default_path_and_missing_sheets(mocker, mock_mapping_dat
         return dummy
 
     mocker.patch("pandas.read_excel", side_effect=fake_read_excel_error)
-    mocker.patch("pandas.ExcelFile", return_value="dummy_xl")
+    mock_xl = mocker.MagicMock()
+    mock_xl.sheet_names = ["Explanations", "Standardized Financials "]
+    mocker.patch("pandas.ExcelFile", return_value=mock_xl)
     engine = MappingEngine() # No path given
     df = engine.df
     assert len(df) == 0

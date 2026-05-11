@@ -8,10 +8,10 @@ def mock_environment(mocker, mock_pandas_read_excel):
     # Set the mapping path to our dummy so `_get_mapping` loads the mock
     mocker.patch.dict(os.environ, {"LSEG_MAPPING_PATH": "dummy.xlsx"})
     
-    # Reset singletons
     server._mapping = None
     server._indexer = None
     server._rescan = None
+    server._startup_complete.set()
 
 @pytest.mark.asyncio
 async def test_search_financial_mapping():
@@ -32,11 +32,11 @@ async def test_search_financial_mapping_list():
 
 @pytest.mark.asyncio
 async def test_search_financial_mapping_error(mocker):
-    mocker.patch("lseg_mcp.server._get_mapping", side_effect=FileNotFoundError())
+    mocker.patch("lseg_mcp.server._get_mapping_async", side_effect=FileNotFoundError())
     res = await server.search_financial_mapping("RREV")
     assert "**Error**: Mapping Excel file not found" in res
     
-    mocker.patch("lseg_mcp.server._get_mapping", side_effect=Exception("Generic error"))
+    mocker.patch("lseg_mcp.server._get_mapping_async", side_effect=Exception("Generic error"))
     res2 = await server.search_financial_mapping("RREV")
     assert "**Error**: Generic error" in res2
 
@@ -47,7 +47,7 @@ async def test_get_mapping_rules():
 
 @pytest.mark.asyncio
 async def test_get_mapping_rules_error(mocker):
-    mocker.patch("lseg_mcp.server._get_mapping", side_effect=Exception("Generic error"))
+    mocker.patch("lseg_mcp.server._get_mapping_async", side_effect=Exception("Generic error"))
     res = await server.get_mapping_rules()
     assert "**Error**: Generic error" in res
 
@@ -75,7 +75,7 @@ async def test_validate_lseg_formula():
 
 @pytest.mark.asyncio
 async def test_validate_lseg_formula_error(mocker):
-    mocker.patch("lseg_mcp.server._get_mapping", side_effect=Exception("Generic error"))
+    mocker.patch("lseg_mcp.server._get_mapping_async", side_effect=Exception("Generic error"))
     res = await server.validate_lseg_formula(["RREV"])
     assert "**Error**: Generic error" in res
 
@@ -93,7 +93,7 @@ async def test_draft_api_call(mocker):
 
 @pytest.mark.asyncio
 async def test_draft_api_call_error(mocker):
-    mocker.patch("lseg_mcp.server._get_mapping", side_effect=Exception("Generic error"))
+    mocker.patch("lseg_mcp.server._get_mapping_async", side_effect=Exception("Generic error"))
     res = await server.draft_api_call("python", ["AAPL.O"], ["RREV"])
     assert "**Error**: Generic error" in res
 
@@ -139,7 +139,7 @@ async def test_matrix_resource():
 
 @pytest.mark.asyncio
 async def test_matrix_resource_error(mocker):
-    mocker.patch("lseg_mcp.server._get_mapping", side_effect=Exception("Generic error"))
+    mocker.patch("lseg_mcp.server._get_mapping_async", side_effect=Exception("Generic error"))
     res = await server.matrix_resource()
     assert "Error loading matrix resource: Generic error" in res
 
@@ -184,7 +184,8 @@ def test_main(mocker):
     mock_thread.return_value.start.assert_called_once()
     server.mcp.run.assert_called_once()
 
-def test_singletons(mocker, mock_pandas_read_excel):
+@pytest.mark.asyncio
+async def test_singletons(mocker, mock_pandas_read_excel):
     # Ensure they create new instances when None
     server._mapping = None
     server._indexer = None
@@ -192,7 +193,7 @@ def test_singletons(mocker, mock_pandas_read_excel):
     
     mocker.patch.dict(os.environ, {"LSEG_MAPPING_PATH": "dummy.xlsx", "REFINITIVR_PATH": "dummy_r_path"})
     
-    m1 = server._get_mapping()
+    m1 = await server._get_mapping_async()
     assert m1 is not None
     assert server._mapping is m1
     
