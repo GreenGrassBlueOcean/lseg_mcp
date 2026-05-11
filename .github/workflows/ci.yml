@@ -81,31 +81,32 @@ jobs:
         # Make executable (git may strip +x on checkout)
         chmod +x run_server.sh
 
-        # Launch the server in background and verify it starts
-        ./run_server.sh &
-        SERVER_PID=$!
-        sleep 3
-
-        if kill -0 $SERVER_PID 2>/dev/null; then
-          echo "✅ run_server.sh started successfully (PID $SERVER_PID)"
-          kill $SERVER_PID
-        else
-          echo "::error::run_server.sh process exited prematurely"
-          exit 1
-        fi
+        # Launch the server, holding stdin open via Python, and verify it stays alive
+        python -c "
+import time, subprocess, sys
+print('Starting run_server.sh...')
+proc = subprocess.Popen(['./run_server.sh'], stdin=subprocess.PIPE)
+time.sleep(3)
+if proc.poll() is not None:
+    print(f'::error::run_server.sh exited prematurely with code {proc.returncode}')
+    sys.exit(1)
+print('✅ run_server.sh stayed alive successfully.')
+proc.terminate()
+"
 
     - name: Validate run_server.cmd (Windows)
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
-        # Launch the server via the actual .cmd script in background
-        $proc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "run_server.cmd" -PassThru -NoNewWindow
-        Start-Sleep -Seconds 3
-
-        if (!$proc.HasExited) {
-          Write-Host "✅ run_server.cmd started successfully (PID $($proc.Id))"
-          Stop-Process -Id $proc.Id -Force
-        } else {
-          Write-Host "::error::run_server.cmd process exited prematurely (exit code: $($proc.ExitCode))"
-          exit 1
-        }
+        # Launch the server, holding stdin open via Python, and verify it stays alive
+        python -c "
+import time, subprocess, sys
+print('Starting run_server.cmd...')
+proc = subprocess.Popen(['cmd.exe', '/c', 'run_server.cmd'], stdin=subprocess.PIPE)
+time.sleep(3)
+if proc.poll() is not None:
+    print(f'::error::run_server.cmd exited prematurely with code {proc.returncode}')
+    sys.exit(1)
+print('✅ run_server.cmd stayed alive successfully.')
+proc.terminate()
+"
