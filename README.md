@@ -15,7 +15,20 @@ It enables AI agents to confidently draft perfectly formatted financial data ret
 - **Polyglot Code Generation**: Merges mapping-aware field resolution with live AST-verified function signatures to generate syntactically correct boilerplate in Python and R.
 - **AST-Driven Introspection**: Performs static analysis to read function signatures directly from the Python and R source code without executing unsafe scripts.
 - **Continuous Synchronization**: Automatically performs `git pull` and `pip install --upgrade` to ensure the MCP server is always synchronized with the underlying SDKs.
-- **Headless Observability**: Features a hardened `os.fsync()` log streaming pipeline ensuring reliable cross-platform telemetry capture.
+## Use Cases
+
+`lseg-mcp` is designed for quantitative researchers, data engineers, and AI agents who need reliable, scalable access to financial data:
+- **Autonomous Pipeline Generation**: Ask an AI agent to "pull 10 years of normalized EPS for Apple and Microsoft in R" and receive a robust, mapping-verified `RefinitivR` pipeline in seconds without manually hunting for COA codes.
+- **Cross-Language Transitions**: Seamlessly port legacy Python scripts using `lseg-data` into enterprise R pipelines using the identical semantic translation engine.
+- **Automated Refactoring**: Identify deprecated `Eikonformulas` in existing codebases and automatically map them to their modern FCC equivalents.
+
+## Enterprise Resilience
+
+Following a comprehensive architectural audit, `lseg-mcp` has been hardened for mission-critical deployments:
+- **Asynchronous OOM & Timeout Protection**: Heavy background operations (like automated `git clone` or `pip install` syncing) are securely offloaded to dedicated `asyncio` background tasks. This entirely eliminates JSON-RPC starvation and client-side timeouts.
+- **Batched Semantic Resolution**: The `search_financial_mapping` engine natively supports batched vector queries, drastically reducing roundtrip latency during complex formula resolutions.
+- **Cross-Platform Stdio Integrity**: Fortified multi-OS launch scripts utilizing non-blocking pipe management guarantee zero-downtime server operations across Windows, macOS, and Linux, preventing premature EOF closures.
+- **Headless Observability**: Features a hardened `os.fsync()` log streaming pipeline ensuring reliable cross-platform telemetry capture for Airflow or Docker environments.
 
 ## Prerequisites
 
