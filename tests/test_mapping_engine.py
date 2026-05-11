@@ -137,3 +137,25 @@ def test_mapping_engine_default_path_and_missing_sheets(mocker, mock_mapping_dat
     assert len(df) == 0
     assert engine._segments_df.empty
     assert engine._aggregates_df.empty
+
+def test_enrichment_industry_scope_notes(mock_pandas_read_excel):
+    """Verify industry applicability flags are surfaced in _notes."""
+    engine = MappingEngine(xlsx_path="dummy.xlsx")
+    # RREV: bank=False, industrial=True, insurance=False, utility=False
+    res = engine.search("RREV")
+    assert len(res) == 1
+    notes = " ".join(res[0]["_notes"])
+    assert "NOT available for" in notes
+    assert "Bank" in notes
+    assert "Industrial" in notes  # should be in the available list
+
+def test_enrichment_all_applicable_no_scope_note(mock_pandas_read_excel):
+    """When all industries are applicable, no scope note should be emitted."""
+    engine = MappingEngine(xlsx_path="dummy.xlsx")
+    # RINST: all False — no scope note either (no applicable ones either -> edge)
+    res = engine.search("RINST")
+    assert len(res) == 1
+    scope_notes = [n for n in res[0]["_notes"] if "Industry scope" in n]
+    # All False means not_applicable has items but applicable_industries is empty
+    # So the condition `if not_applicable and applicable_industries` is False -> no note
+    assert len(scope_notes) == 0

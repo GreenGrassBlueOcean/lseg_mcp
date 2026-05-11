@@ -377,5 +377,27 @@ class MappingEngine:
         if "instrument id" in fcc_lower:
             notes.append("Requires specific Instrument ID for per-instrument matching.")
 
+        # ── Industry applicability flags ─────────────────────────────
+        applicable_industries = []
+        for col, label in [
+            ("bank_applicable", "Bank"),
+            ("industry_applicable", "Industrial"),
+            ("insurance_applicable", "Insurance"),
+            ("utility_applicable", "Utility"),
+        ]:
+            if rec.get(col) is True:
+                applicable_industries.append(label)
+        not_applicable = []
+        for col, label in [
+            ("bank_applicable", "Bank"),
+            ("industry_applicable", "Industrial"),
+            ("insurance_applicable", "Insurance"),
+            ("utility_applicable", "Utility"),
+        ]:
+            if rec.get(col) is False:
+                not_applicable.append(label)
+        if not_applicable and applicable_industries:
+            notes.append(f"Industry scope: available for {', '.join(applicable_industries)}. NOT available for {', '.join(not_applicable)}.")
+
         rec["_notes"] = notes
         return rec

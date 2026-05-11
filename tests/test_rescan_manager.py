@@ -70,12 +70,26 @@ async def test_update_r_package_error(mocker, mock_subprocess):
 
 @pytest.mark.asyncio
 async def test_update_python_package_pip(mocker, mock_subprocess):
-    chunks = [b"Successf", b"ully installed \r\n", b"lseg-data\n", b"Done\r"]
-    mocker.patch("asyncio.create_subprocess_exec", side_effect=mock_subprocess(stdout=chunks))
+    call_count = {"n": 0}
+    # 3 calls: pip show (before), pip install, pip show (after)
+    async def multi_exec(*args, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] in (1, 3):
+            # pip show
+            return await mock_subprocess(stdout=b"Name: lseg-data\nVersion: 2.1.0\n")(*args, **kwargs)
+        else:
+            # pip install
+            chunks = [b"Successf", b"ully installed \r\n", b"lseg-data\n", b"Done\r"]
+            return await mock_subprocess(stdout=chunks)(*args, **kwargs)
+    mocker.patch("asyncio.create_subprocess_exec", side_effect=multi_exec)
     manager = RescanManager()
     res = await manager.update_python_package()
     assert res["status"] == "updated"
     assert "Successfully installed" in res["message"]
+    assert res["version_before"] == "2.1.0"
+    assert res["version_after"] == "2.1.0"
+    assert "version_before" in res
+    assert "version_after" in res
 
 @pytest.mark.asyncio
 async def test_update_python_package_error(mocker, mock_subprocess):
@@ -83,6 +97,8 @@ async def test_update_python_package_error(mocker, mock_subprocess):
     manager = RescanManager()
     res = await manager.update_python_package()
     assert res["status"] == "error"
+    assert "version_before" in res
+    assert "version_after" in res
 
 @pytest.mark.asyncio
 async def test_update_python_package_timeout(mocker):
@@ -199,3 +215,25 @@ def test_pip_path_resolution(mocker):
     manager2 = RescanManager()
     assert "-m" in manager2.python_pip
     assert "pip" in manager2.python_pip
+
+@pytest.mark.asyncio
+async def test_get_pip_version_success(mocker, mock_subprocess):
+    """Verify _get_pip_version parses Version: line from pip show output."""
+    mocker.patch(
+        "asyncio.create_subprocess_exec",
+        side_effect=mock_subprocess(stdout=b"Name: lseg-data\nVersion: 2.1.3\nSummary: LSEG SDK\n"),
+    )
+    manager = RescanManager()
+    version = await manager._get_pip_version()
+    assert version == "2.1.3"
+
+@pytest.mark.asyncio
+async def test_get_pip_version_not_installed(mocker, mock_subprocess):
+    """Verify _get_pip_version returns 'unknown' when pip show fails."""
+    mocker.patch(
+        "asyncio.create_subprocess_exec",
+        side_effect=mock_subprocess(returncode=1, stderr=b"not found"),
+    )
+    manager = RescanManager()
+    version = await manager._get_pip_version()
+    assert version == "unknown"

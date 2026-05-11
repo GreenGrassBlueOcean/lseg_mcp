@@ -1,0 +1,16 @@
+import lseg.data as ld
+
+# Open a session (requires LSEG Workspace running)
+ld.open_session()
+
+
+# Fetch data for ['AAPL.O']
+df = ld.get_data(
+    universe=['AAPL.O'],
+    fields=['TR.TotalRevenue'],
+    parameters={'SDate': '2020-01-01', 'EDate': '2024-12-31', 'Frq': 'FY'},
+)
+
+print(df)
+
+ld.close_session()

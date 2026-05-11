@@ -1,0 +1,23 @@
+import lseg.data as ld
+
+# Open a session (requires LSEG Workspace running)
+ld.open_session()
+
+# NOTE: Additive formula: fetch ['SDCS', 'SDES'] separately and sum.
+
+# Fetch data for ['JPM']
+import pandas as pd
+df = pd.DataFrame(index=['JPM'])
+
+# Additive formula for Depreciation: SDCS+SDES
+# ACTION REQUIRED FOR AI: Components ['SDCS', 'SDES'] are raw FCC codes.
+# You MUST use the 'search_financial_mapping' tool to look up the 'office_field' for each one before executing.
+df_components = ld.get_data(
+    universe=['JPM'],
+    fields=['SDCS', 'SDES'],  # TODO: REPLACE THESE with their TR.* office_field equivalents
+)
+df['Depreciation'] = df_components[['SDCS', 'SDES']].sum(axis=1, min_count=1)
+
+print(df)
+
+ld.close_session()

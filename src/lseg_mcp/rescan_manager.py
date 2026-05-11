@@ -146,18 +146,34 @@ class RescanManager:
             "message": result["stderr"] or result["stdout"],
         }
 
+    async def _get_pip_version(self) -> str:
+        """Get the currently installed lseg-data version."""
+        cmd = self.python_pip + ["show", "lseg-data"]
+        result = await _run_cmd(cmd)
+        if result["returncode"] == 0:
+            for line in result["stdout"].splitlines():
+                if line.lower().startswith("version:"):
+                    return line.split(":", 1)[1].strip()
+        return "unknown"
+
     async def update_python_package(self) -> dict[str, Any]:
         """Upgrade lseg-data via pip."""
+        version_before = await self._get_pip_version()
         cmd = self.python_pip + ["install", "--upgrade", "lseg-data", "--progress-bar", "raw"]
         result = await _run_cmd(cmd, cwd=str(self.r_repo_path.parent), stream_name="PIP")
+        version_after = await self._get_pip_version()
         if result["returncode"] == 0:
             return {
                 "status": "updated",
                 "message": result["stdout"],
+                "version_before": version_before,
+                "version_after": version_after,
             }
         return {
             "status": "error",
             "message": result["stderr"] or result["stdout"],
+            "version_before": version_before,
+            "version_after": version_after,
         }
 
     async def rescan(

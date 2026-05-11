@@ -313,6 +313,7 @@ async def draft_api_call(
     tickers: list[str],
     fields: list[str],
     industry: str | None = None,
+    parameters: dict[str, Any] | None = None,
 ) -> str:
     """
     Generate a syntactically correct LSEG data retrieval code boilerplate.
@@ -325,6 +326,9 @@ async def draft_api_call(
         tickers: List of RIC codes (e.g. ["AAPL.O", "JPM"]).
         fields: List of requested data items (COA codes or descriptions).
         industry: Optional industry for correct FCC routing.
+        parameters: Optional API parameters dict for time-series queries
+                    (e.g. {"SDate": "2020-01-01", "EDate": "2024-12-31",
+                     "Frq": "FY", "Curn": "USD"}).
 
     Returns:
         Complete, runnable code with mapping-aware field resolution.
@@ -354,6 +358,7 @@ async def draft_api_call(
             fields=fields,
             mapping_notes=mapping_notes,
             signature=sig,
+            parameters=parameters,
         )
         return f"```{language.lower()}\n{result}\n```"
     except Exception as e:

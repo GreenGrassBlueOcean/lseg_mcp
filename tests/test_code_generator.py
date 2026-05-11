@@ -104,3 +104,41 @@ def test_draft_api_call_unknown_language():
         fields=["Gross Profit"]
     )
     assert "Unsupported language" in res
+
+def test_draft_api_call_python_with_parameters():
+    res = draft_api_call(
+        language="python",
+        tickers=["AAPL.O"],
+        fields=["Revenue"],
+        mapping_notes=[{"office_field": "TR.TotalRevenue", "_target_fcc": "STLR", "coa": "RTLR"}],
+        parameters={"SDate": "2020-01-01", "EDate": "2024-12-31", "Frq": "FY"},
+    )
+    assert "parameters={'SDate': '2020-01-01', 'EDate': '2024-12-31', 'Frq': 'FY'}" in res
+    assert "fields=['TR.TotalRevenue']" in res
+
+def test_draft_api_call_r_with_parameters():
+    sig = {
+        "name": "rd_GetData",
+        "args": ["RDObject = rd_connection()", "rics", "Eikonformulas"],
+        "doc": "Test",
+    }
+    res = draft_api_call(
+        language="r",
+        tickers=["AAPL.O"],
+        fields=["Revenue"],
+        mapping_notes=[{"office_field": "TR.TotalRevenue", "_target_fcc": "STLR", "coa": "RTLR"}],
+        signature=sig,
+        parameters={"SDate": "0CY", "Frq": "FQ"},
+    )
+    assert 'Parameters = list(SDate = "0CY", Frq = "FQ")' in res
+    assert "Eikonformulas = fields," in res  # trailing comma before Parameters
+
+def test_draft_api_call_python_no_parameters():
+    """Verify parameters= None produces no parameters line."""
+    res = draft_api_call(
+        language="python",
+        tickers=["AAPL.O"],
+        fields=["Revenue"],
+        mapping_notes=[{"office_field": "TR.TotalRevenue", "_target_fcc": "STLR", "coa": "RTLR"}],
+    )
+    assert "parameters=" not in res

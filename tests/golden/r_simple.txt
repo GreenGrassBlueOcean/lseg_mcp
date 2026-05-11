@@ -1,0 +1,14 @@
+library(Refinitiv)
+
+
+# Function signature from local index: ['RDObject = rd_connection()', 'rics', 'Eikonformulas']
+
+rics  <- c("MSFT.O", "AAPL.O")
+fields <- c("TR.TotalAssetsReported")
+
+result <- rd_GetData(
+  rics = rics,
+  Eikonformulas = fields
+)
+
+print(result)

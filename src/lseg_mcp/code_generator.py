@@ -16,6 +16,7 @@ def _format_python_call(
     fields: list[str],
     mapping_notes: list[dict[str, Any]],
     signature: dict[str, Any] | None,
+    parameters: dict[str, Any] | None = None,
 ) -> str:
     """Generate a Python lseg-data boilerplate."""
     lines: list[str] = []
@@ -59,6 +60,8 @@ def _format_python_call(
         lines.append(f"df = ld.get_data(")
         lines.append(f"    universe={ticker_str},")
         lines.append(f"    fields={simple_fields},")
+        if parameters:
+            lines.append(f"    parameters={parameters},")
         lines.append(f")")
     else:
         lines.append("import pandas as pd")
@@ -92,6 +95,7 @@ def _format_r_call(
     fields: list[str],
     mapping_notes: list[dict[str, Any]],
     signature: dict[str, Any] | None,
+    parameters: dict[str, Any] | None = None,
 ) -> str:
     """Generate an R RefinitivR boilerplate."""
     lines: list[str] = []
@@ -153,7 +157,12 @@ def _format_r_call(
     if simple_fields:
         lines.append(f"result <- {func_name}(")
         lines.append(f"  {arg_rics} = rics,")
-        lines.append(f"  {arg_fields} = fields")
+        if parameters:
+            r_params = ", ".join(f'{k} = "{v}"' if isinstance(v, str) else f"{k} = {v}" for k, v in parameters.items())
+            lines.append(f"  {arg_fields} = fields,")
+            lines.append(f"  Parameters = list({r_params})")
+        else:
+            lines.append(f"  {arg_fields} = fields")
         lines.append(f")")
     else:
         lines.append("result <- data.frame(Instrument = rics)")
@@ -186,6 +195,7 @@ def draft_api_call(
     fields: list[str],
     mapping_notes: list[dict[str, Any]] | None = None,
     signature: dict[str, Any] | None = None,
+    parameters: dict[str, Any] | None = None,
 ) -> str:
     """
     Generate a syntactically correct API call boilerplate.
@@ -202,6 +212,9 @@ def draft_api_call(
         Enriched mapping records from the MappingEngine.
     signature
         Live function signature from the PackageIndexer.
+    parameters
+        Optional API parameters dict (e.g. ``{"SDate": "2020-01-01",
+        "EDate": "2024-12-31", "Frq": "FY", "Curn": "USD"}``).
 
     Returns
     -------
@@ -212,8 +225,8 @@ def draft_api_call(
         mapping_notes = []
 
     if language.lower() in ("python", "py"):
-        return _format_python_call(tickers, fields, mapping_notes, signature)
+        return _format_python_call(tickers, fields, mapping_notes, signature, parameters)
     elif language.lower() in ("r",):
-        return _format_r_call(tickers, fields, mapping_notes, signature)
+        return _format_r_call(tickers, fields, mapping_notes, signature, parameters)
     else:
         return f"# Unsupported language: {language}. Use 'python' or 'r'."
