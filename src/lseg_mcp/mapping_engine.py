@@ -95,8 +95,9 @@ class MappingEngine:
         self._explanations = "\n".join(lines)
 
         # ── Standardized Financials (main mapping matrix) ────────────────
+        std_sheet = next((s for s in xl.sheet_names if "Standardized Financials" in s), xl.sheet_names[0])
         raw = pd.read_excel(
-            xl, sheet_name="Standardized Financials ", header=None
+            xl, sheet_name=std_sheet, header=None
         )
         # Row 2 (0-indexed) contains the actual column headers.
         # Data starts from row 3 onward.  Drop the first 3 header rows.
@@ -186,7 +187,7 @@ class MappingEngine:
         mask = pd.Series(False, index=df.index)
         for col in text_cols:
             if col in df.columns:
-                mask |= df[col].astype(str).str.contains(query, case=False, regex=False, na=False)
+                mask |= df[col].fillna("").astype(str).str.contains(query, case=False, regex=False, na=False)
 
         result = df[mask].copy()
 

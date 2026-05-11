@@ -109,6 +109,11 @@ The LSEG mapping Excel has a complex multi-header layout. The engine explicitly 
 ### 4.5 Enterprise Resilience & CI/CD
 Following a rigorous audit, the architecture incorporates enterprise-grade protections against common MCP vulnerabilities:
 - **Asynchronous Stdio Isolation**: Long-running background operations (e.g., `git clone`, `pip install`) are aggressively offloaded to dedicated `asyncio` task pools. This guarantees the JSON-RPC event loop on `sys.stdin` is never starved, entirely preventing client-side timeouts during cold starts or heavy network ops.
+- **Event Loop Unblocking**: Heavy synchronous Excel loading in `MappingEngine` is strictly isolated using `asyncio.to_thread()`, ensuring the main MCP event loop remains highly responsive to client pings.
+- **JSON-RPC Stream Protection**: Explicit `sys.stdout = sys.stderr` redirection guarantees that stray prints from underlying dependencies (Pandas/GitPython) never corrupt the MCP standard output protocol.
+- **Thread-Safe Singletons**: A `threading.Event()` lock ensures that tool requests arriving during heavy cold-start indexing are safely deferred, preventing file lock collisions and corrupted AST states.
+- **Secure Code Generation**: The R boilerplate generator utilizes `json.dumps()` instead of naive string formatting, neutralizing agentic prompt injection and mitigating Remote Code Execution (RCE) vectors.
+- **Zombie Process Prevention**: The rescan manager guarantees OS process handle reaping via strict `await proc.wait()` cleanup following subprocess timeout terminations.
 - **Cross-Platform Launch Integrity**: Shell wrapper scripts (`run_server.sh` and `run_server.cmd`) are strictly bound by `.gitattributes` to enforce correct OS-level line endings (LF vs CRLF). 
 - **Automated CI/CD Validation**: A multi-platform GitHub Actions workflow rigorously tests the launch scripts on Windows, macOS, and Linux runners. It uses advanced non-blocking `subprocess.Popen` orchestration to verify that standard I/O pipes properly remain open and prevent premature EOF closures across all environments.
 - **O(1) Batch Queries**: The semantic search engine supports batched query lists natively, reducing the roundtrip latency between the LLM and the MCP server.

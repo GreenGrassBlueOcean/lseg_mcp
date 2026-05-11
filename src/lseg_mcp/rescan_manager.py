@@ -80,6 +80,7 @@ async def _run_cmd(cmd: list[str], cwd: str | None = None, stream_name: str | No
         except asyncio.TimeoutError:
             try:
                 proc.kill()
+                await proc.wait()
             except OSError:
                 pass
             return {"returncode": -1, "stdout": "", "stderr": "Command timed out after 300s."}

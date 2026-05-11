@@ -7,6 +7,7 @@ syntactically correct boilerplate code in Python (lseg-data) or R (RefinitivR).
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 
@@ -131,8 +132,8 @@ def _format_r_call(
     if not simple_fields and not additive_fields:
         simple_fields = fields
 
-    ticker_r = ", ".join(f'"{t}"' for t in tickers)
-    fields_r = ", ".join(f'"{f}"' for f in simple_fields)
+    ticker_r = ", ".join(json.dumps(t) for t in tickers)
+    fields_r = ", ".join(json.dumps(f) for f in simple_fields)
 
     # Extract correct parameter names from signature
     arg_rics = "rics"
@@ -163,7 +164,7 @@ def _format_r_call(
         formula = af["_additive"]
         components = [c.strip() for c in formula.split("+")]
         col_name = af.get("coa_description", formula).replace(" ", "_")
-        comp_r = ", ".join(f'"{c}"' for c in components)
+        comp_r = ", ".join(json.dumps(c) for c in components)
         lines.append(f"# Additive formula for {af.get('coa_description', formula)}: {formula}")
         lines.append(f"components <- {func_name}(")
         lines.append(f"  {arg_rics} = rics,")

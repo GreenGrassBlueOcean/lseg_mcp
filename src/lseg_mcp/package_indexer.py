@@ -250,11 +250,23 @@ class RPackageIndex:
             start_idx = m.end()
             depth = 1
             idx = start_idx
+            in_string = False
+            string_char = None
             while idx < len(content) and depth > 0:
-                if content[idx] == "(":
-                    depth += 1
-                elif content[idx] == ")":
-                    depth -= 1
+                c = content[idx]
+                if not in_string:
+                    if c in ("'", '"'):
+                        in_string = True
+                        string_char = c
+                    elif c == "(":
+                        depth += 1
+                    elif c == ")":
+                        depth -= 1
+                else:
+                    if c == '\\':
+                        idx += 1  # Skip the escaped character
+                    elif c == string_char:
+                        in_string = False
                 idx += 1
                 
             args_raw = content[start_idx:idx-1].strip() if depth == 0 else ""

@@ -32,6 +32,7 @@ from lseg_mcp import code_generator
 # stderr instead of corrupting the MCP message stream.
 _real_stdout = sys.stdout
 _real_stderr = sys.stderr
+sys.stdout = sys.stderr
 
 logger = logging.getLogger("lseg_mcp")
 
@@ -78,13 +79,16 @@ _DEFAULT_R_REPO = _PROJECT_ROOT / ".lseg_cache" / "RefinitivR"
 _mapping: MappingEngine | None = None
 _indexer: PackageIndexer | None = None
 _rescan: RescanManager | None = None
+_startup_complete = threading.Event()
 
 
-def _get_mapping() -> MappingEngine:
+async def _get_mapping_async() -> MappingEngine:
     global _mapping
     if _mapping is None:
         xlsx_path = os.environ.get("LSEG_MAPPING_PATH", str(_DEFAULT_XLSX))
         _mapping = MappingEngine(xlsx_path)
+        # Offload the blocking CPU work to a background thread
+        await asyncio.to_thread(_mapping._load)
     return _mapping
 
 
@@ -123,44 +127,47 @@ def _needs_index() -> bool:
 
 async def _auto_index_on_startup() -> None:
     """Run a full rescan on first launch if indexes are cold."""
-    if not _needs_index():
-        return
-
-    logger.info("[STARTUP] First-run detected -- populating AST indexes...")
-
-    rescan = _get_rescan()
-    indexer = _get_indexer()
-
-    # Update R package
-    r_repo = Path(rescan.r_repo_path)
-    if not r_repo.joinpath("R").exists():
-        logger.info("  [CLONE] Indexing RefinitivR -- cloning from GitHub...")
-        r_result = await rescan.update_r_package()
-        logger.info("  [OK] RefinitivR: %s", r_result.get("status", "unknown"))
-    else:
-        logger.info("  [OK] RefinitivR already present")
-
-    # Update Python package
     try:
-        py_installed = importlib.util.find_spec("lseg.data") is not None
-    except (ModuleNotFoundError, ValueError):
-        py_installed = False
-    if not py_installed:
-        logger.info("  [PIP] Indexing lseg-data -- installing via pip...")
-        py_result = await rescan.update_python_package()
-        if py_result.get("status") == "error":
-            logger.error("  [FAIL] pip install failed: %s", py_result.get("message"))
-        logger.info("  [OK] lseg-data: %s", py_result.get("status", "unknown"))
-    else:
-        logger.info("  [OK] lseg-data already installed")
+        if not _needs_index():
+            return
 
-    # Build indexes
-    logger.info("  [INDEX] Building AST indexes...")
-    reindex_result = indexer.reindex()
-    py_count = reindex_result.get("python", {}).get("count", 0)
-    r_count = reindex_result.get("r", {}).get("count", 0)
-    logger.info("  [OK] Indexed %d Python + %d R functions", py_count, r_count)
-    logger.info("[READY] First-run indexing complete -- server ready")
+        logger.info("[STARTUP] First-run detected -- populating AST indexes...")
+
+        rescan = _get_rescan()
+        indexer = _get_indexer()
+
+        # Update R package
+        r_repo = Path(rescan.r_repo_path)
+        if not r_repo.joinpath("R").exists():
+            logger.info("  [CLONE] Indexing RefinitivR -- cloning from GitHub...")
+            r_result = await rescan.update_r_package()
+            logger.info("  [OK] RefinitivR: %s", r_result.get("status", "unknown"))
+        else:
+            logger.info("  [OK] RefinitivR already present")
+
+        # Update Python package
+        try:
+            py_installed = importlib.util.find_spec("lseg.data") is not None
+        except (ModuleNotFoundError, ValueError):
+            py_installed = False
+        if not py_installed:
+            logger.info("  [PIP] Indexing lseg-data -- installing via pip...")
+            py_result = await rescan.update_python_package()
+            if py_result.get("status") == "error":
+                logger.error("  [FAIL] pip install failed: %s", py_result.get("message"))
+            logger.info("  [OK] lseg-data: %s", py_result.get("status", "unknown"))
+        else:
+            logger.info("  [OK] lseg-data already installed")
+
+        # Build indexes
+        logger.info("  [INDEX] Building AST indexes...")
+        reindex_result = indexer.reindex()
+        py_count = reindex_result.get("python", {}).get("count", 0)
+        r_count = reindex_result.get("r", {}).get("count", 0)
+        logger.info("  [OK] Indexed %d Python + %d R functions", py_count, r_count)
+        logger.info("[READY] First-run indexing complete -- server ready")
+    finally:
+        _startup_complete.set()
 
 
 # ── FastMCP instance ─────────────────────────────────────────────────
@@ -193,8 +200,10 @@ async def search_financial_mapping(
         Matching rows with legacy COA codes, target FCC formulas, polarity,
         and implementation notes (additive formulas, ASR flags, etc.).
     """
+    if not _startup_complete.is_set():
+        return "⏳ **Status**: Server is downloading and indexing packages. Please wait 10 seconds and try again."
     try:
-        engine = _get_mapping()
+        engine = await _get_mapping_async()
         queries = query if isinstance(query, list) else [query]
         all_results = {}
         
@@ -225,8 +234,10 @@ async def get_mapping_rules() -> str:
     special-case handling rules (No FCC Match, ASR bracket notation, additive
     formulas, Primary Instrument requirements), and cash-flow / balance-sheet notes.
     """
+    if not _startup_complete.is_set():
+        return "⏳ **Status**: Server is downloading and indexing packages. Please wait 10 seconds and try again."
     try:
-        engine = _get_mapping()
+        engine = await _get_mapping_async()
         rules = engine.get_rules()
         return json.dumps(rules, indent=2, default=str)
     except Exception as e:
@@ -246,6 +257,8 @@ async def get_package_signature(language: str, function: str) -> str:
         The exact arguments, defaults, typing hints, and docstring
         as parsed from the currently installed source code.
     """
+    if not _startup_complete.is_set():
+        return "⏳ **Status**: Server is downloading and indexing packages. Please wait 10 seconds and try again."
     try:
         indexer = _get_indexer()
         result = indexer.get_signature(language, function)
@@ -276,8 +289,10 @@ async def validate_lseg_formula(
     Returns:
         Per-field validation results with status and warnings.
     """
+    if not _startup_complete.is_set():
+        return "⏳ **Status**: Server is downloading and indexing packages. Please wait 10 seconds and try again."
     try:
-        engine = _get_mapping()
+        engine = await _get_mapping_async()
         results = engine.validate_formula(fields, industry=industry)
         return json.dumps(results, indent=2, default=str)
     except Exception as e:
@@ -306,8 +321,10 @@ async def draft_api_call(
     Returns:
         Complete, runnable code with mapping-aware field resolution.
     """
+    if not _startup_complete.is_set():
+        return "⏳ **Status**: Server is downloading and indexing packages. Please wait 10 seconds and try again."
     try:
-        engine = _get_mapping()
+        engine = await _get_mapping_async()
         indexer = _get_indexer()
 
         # Resolve each field through the mapping engine
@@ -355,6 +372,8 @@ async def rescan_packages(update_packages: bool = True, background: bool = False
     Returns:
         Update status and diff summary.
     """
+    if not _startup_complete.is_set():
+        return "⏳ **Status**: Server is downloading and indexing packages. Please wait 10 seconds and try again."
     try:
         indexer = _get_indexer()
         rescan = _get_rescan()
@@ -382,8 +401,10 @@ async def matrix_resource() -> str:
     Read-only Markdown resource of the global LSEG mapping rules
     and categorical definitions.
     """
+    if not _startup_complete.is_set():
+        return "⏳ **Status**: Server is downloading and indexing packages. Please wait 10 seconds and try again."
     try:
-        engine = _get_mapping()
+        engine = await _get_mapping_async()
         rules = engine.get_rules()
 
         lines = [
@@ -415,6 +436,8 @@ async def matrix_resource() -> str:
 @mcp.resource("pkg://lseg-data/exports")
 async def python_exports_resource() -> str:
     """Live hierarchical view of all Python functions in the current lseg-data package."""
+    if not _startup_complete.is_set():
+        return "⏳ **Status**: Server is downloading and indexing packages. Please wait 10 seconds and try again."
     try:
         indexer = _get_indexer()
         tree = indexer.get_exports("python")
@@ -426,6 +449,8 @@ async def python_exports_resource() -> str:
 @mcp.resource("pkg://RefinitivR/exports")
 async def r_exports_resource() -> str:
     """Live hierarchical view of all R functions exported by the current RefinitivR commit."""
+    if not _startup_complete.is_set():
+        return "⏳ **Status**: Server is downloading and indexing packages. Please wait 10 seconds and try again."
     try:
         indexer = _get_indexer()
         tree = indexer.get_exports("r")
