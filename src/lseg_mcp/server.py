@@ -27,12 +27,20 @@ from lseg_mcp.package_indexer import PackageIndexer
 from lseg_mcp.rescan_manager import RescanManager
 from lseg_mcp import code_generator
 
-# ── Redirect stray stdout to stderr to protect JSON-RPC on stdio ─────
-# Any print() or warning from pandas / openpyxl / gitpython will go to
-# stderr instead of corrupting the MCP message stream.
-_real_stdout = sys.stdout
+# ── OS-level fd redirection to protect JSON-RPC on stdio ─────────────
+# The MCP SDK reads sys.stdout.buffer at runtime to send JSON-RPC
+# responses.  A Python-level `sys.stdout = sys.stderr` redirect would
+# cause the SDK to write responses to stderr, breaking the protocol.
+#
+# Strategy (same fd-swap used by GGBOIndex's run_server.cmd):
+#   1. Duplicate the real stdout fd so we can restore it later.
+#   2. Redirect Python's sys.stdout to stderr so stray print() /
+#      warnings from pandas / openpyxl / gitpython go to stderr.
+#   3. In main(), restore sys.stdout from the saved fd right before
+#      mcp.run() so the MCP SDK gets the real stdout pipe.
+_real_stdout_fd = os.dup(sys.stdout.fileno())   # save real fd 1
 _real_stderr = sys.stderr
-sys.stdout = sys.stderr
+sys.stdout = sys.stderr                          # Python-level guard
 
 logger = logging.getLogger("lseg_mcp")
 
@@ -469,9 +477,24 @@ def main():
     # the JSON-RPC initialize handshake, preventing client timeouts.
     t = threading.Thread(target=lambda: asyncio.run(_auto_index_on_startup()), daemon=True)
     t.start()
-    
+
+    # ── Restore the real stdout for the MCP SDK ──────────────────────
+    # The MCP SDK's stdio_server() reads sys.stdout.buffer to send
+    # JSON-RPC responses.  We saved the real stdout fd at module load
+    # time; now we re-wrap it as sys.stdout so the SDK writes to the
+    # correct pipe.  The Python-level guard (sys.stdout = sys.stderr)
+    # was only needed during import / startup to catch stray prints.
+    from io import TextIOWrapper
+
+    sys.stdout = TextIOWrapper(
+        os.fdopen(_real_stdout_fd, "wb"),
+        encoding="utf-8",
+        line_buffering=True,
+    )
+
     # Start the MCP stdio event loop
     mcp.run()
+
 
 
 if __name__ == "__main__":
