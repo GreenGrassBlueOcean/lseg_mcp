@@ -47,7 +47,7 @@ def _format_python_call(
                 # Raw FCC codes are not valid API fields
                 fcc = note.get("_target_fcc", note.get("coa", "unknown"))
                 if fcc and str(fcc).strip() and "no fcc" not in str(fcc).lower():
-                    lines.append(f"# WARNING: '{fcc}' is an FCC code with no known Office Field — resolve manually")
+                    lines.append(f"# ACTION REQUIRED FOR AI: '{fcc}' is a raw FCC code. You MUST use the 'search_financial_mapping' tool to find its 'office_field'.")
 
     if not simple_fields and not additive_fields:
         simple_fields = fields  # pragma: no cover
@@ -71,10 +71,11 @@ def _format_python_call(
         components = [c.strip() for c in formula.split("+")]
         col_name = af.get("coa_description", formula).replace(" ", "_")
         lines.append(f"# Additive formula for {af.get('coa_description', formula)}: {formula}")
-        lines.append(f"# WARNING: components {components} are FCC codes — resolve each to its Office Field")
+        lines.append(f"# ACTION REQUIRED FOR AI: Components {components} are raw FCC codes.")
+        lines.append(f"# You MUST use the 'search_financial_mapping' tool to look up the 'office_field' for each one before executing.")
         lines.append(f"df_components = ld.get_data(")
         lines.append(f"    universe={ticker_str},")
-        lines.append(f"    fields={components},  # TODO: replace with Office Field equivalents")
+        lines.append(f"    fields={components},  # TODO: REPLACE THESE with their TR.* office_field equivalents")
         lines.append(f")")
         lines.append(f"df['{col_name}'] = df_components[{components}].sum(axis=1, min_count=1)")
         lines.append("")
@@ -126,7 +127,7 @@ def _format_r_call(
                 # Raw FCC codes are not valid API fields
                 fcc = note.get("_target_fcc", note.get("coa", "unknown"))
                 if fcc and str(fcc).strip() and "no fcc" not in str(fcc).lower():
-                    lines.append(f"# WARNING: '{fcc}' is an FCC code with no known Office Field — resolve manually")
+                    lines.append(f"# ACTION REQUIRED FOR AI: '{fcc}' is a raw FCC code. You MUST use the 'search_financial_mapping' tool to find its 'office_field'.")
 
     if not simple_fields and not additive_fields:
         simple_fields = fields  # pragma: no cover
@@ -165,10 +166,11 @@ def _format_r_call(
         col_name = af.get("coa_description", formula).replace(" ", "_")
         comp_r = ", ".join(json.dumps(c) for c in components)
         lines.append(f"# Additive formula for {af.get('coa_description', formula)}: {formula}")
-        lines.append(f"# WARNING: components {components} are FCC codes — resolve each to its Office Field")
+        lines.append(f"# ACTION REQUIRED FOR AI: Components {components} are raw FCC codes.")
+        lines.append(f"# You MUST use the 'search_financial_mapping' tool to look up the 'office_field' for each one before executing.")
         lines.append(f"components <- {func_name}(")
         lines.append(f"  {arg_rics} = rics,")
-        lines.append(f"  {arg_fields} = c({comp_r})  # TODO: replace with Office Field equivalents")
+        lines.append(f"  {arg_fields} = c({comp_r})  # TODO: REPLACE THESE with their TR.* office_field equivalents")
         lines.append(f")")
         lines.append(f"result[['{col_name}']] <- rowSums(components[, c({comp_r}), drop=FALSE], na.rm = FALSE)")
         lines.append("")
