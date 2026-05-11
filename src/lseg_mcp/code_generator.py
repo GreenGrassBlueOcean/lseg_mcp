@@ -69,7 +69,10 @@ def _format_python_call(
     # Handle additive formulas
     for af in additive_fields:
         formula = af["_additive"]
-        components = [c.strip() for c in formula.split("+")]
+        components = [
+            c.strip() if c.strip().startswith("TR.") else f"TR.F.{c.strip()}"
+            for c in formula.split("+")
+        ]
         col_name = af.get("coa_description", formula).replace(" ", "_")
         lines.append(f"# Additive formula for {af.get('coa_description', formula)}: {formula}")
         lines.append(f"df_components = ld.get_data(")
@@ -162,7 +165,10 @@ def _format_r_call(
     # Handle additive formulas
     for af in additive_fields:
         formula = af["_additive"]
-        components = [c.strip() for c in formula.split("+")]
+        components = [
+            c.strip() if c.strip().startswith("TR.") else f"TR.F.{c.strip()}"
+            for c in formula.split("+")
+        ]
         col_name = af.get("coa_description", formula).replace(" ", "_")
         comp_r = ", ".join(json.dumps(c) for c in components)
         lines.append(f"# Additive formula for {af.get('coa_description', formula)}: {formula}")
