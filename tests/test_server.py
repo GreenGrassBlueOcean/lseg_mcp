@@ -24,6 +24,13 @@ async def test_search_financial_mapping():
     assert "No mapping found" in res2
 
 @pytest.mark.asyncio
+async def test_search_financial_mapping_list():
+    # Multiple valid searches
+    res = await server.search_financial_mapping(["RREV", "RDEBT"])
+    assert "RREV" in res
+    assert "RDEBT" in res
+
+@pytest.mark.asyncio
 async def test_search_financial_mapping_error(mocker):
     mocker.patch("lseg_mcp.server._get_mapping", side_effect=FileNotFoundError())
     res = await server.search_financial_mapping("RREV")
@@ -101,6 +108,22 @@ async def test_rescan_packages(mocker):
     
     res = await server.rescan_packages()
     assert "ok" in res
+
+@pytest.mark.asyncio
+async def test_rescan_packages_background(mocker):
+    class MockRescan:
+        async def rescan(self, indexer, update_packages):
+            return {"status": "ok"}
+            
+    mocker.patch("lseg_mcp.server._get_rescan", return_value=MockRescan())
+    mocker.patch("lseg_mcp.server._get_indexer", return_value="dummy_indexer")
+    
+    mock_create_task = mocker.patch("lseg_mcp.server.asyncio.create_task")
+    res = await server.rescan_packages(background=True)
+    
+    assert "started" in res
+    assert "background" in res
+    mock_create_task.assert_called_once()
 
 @pytest.mark.asyncio
 async def test_rescan_packages_error(mocker):

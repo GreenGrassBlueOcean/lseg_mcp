@@ -40,3 +40,72 @@ jobs:
       uses: codecov/codecov-action@v5
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
+
+  launch-scripts:
+    name: Validate launch scripts (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Create venv and install package
+      run: |
+        python -m venv .venv
+        ${{ matrix.os == 'windows-latest' && '.venv\\Scripts\\pip' || '.venv/bin/pip' }} install -e .
+
+    - name: Validate run_server.sh (Unix)
+      if: runner.os != 'Windows'
+      run: |
+        # Check the file has no CRLF line endings
+        if file run_server.sh | grep -q CRLF; then
+          echo "::error::run_server.sh has CRLF line endings — will fail on Linux/macOS"
+          exit 1
+        fi
+
+        # Ensure the shebang is present
+        head -1 run_server.sh | grep -q '^#!/usr/bin/env bash' || {
+          echo "::error::run_server.sh is missing the shebang line"
+          exit 1
+        }
+
+        # Make executable (git may strip +x on checkout)
+        chmod +x run_server.sh
+
+        # Launch the server in background and verify it starts
+        ./run_server.sh &
+        SERVER_PID=$!
+        sleep 3
+
+        if kill -0 $SERVER_PID 2>/dev/null; then
+          echo "✅ run_server.sh started successfully (PID $SERVER_PID)"
+          kill $SERVER_PID
+        else
+          echo "::error::run_server.sh process exited prematurely"
+          exit 1
+        fi
+
+    - name: Validate run_server.cmd (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        # Launch the server via the actual .cmd script in background
+        $proc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "run_server.cmd" -PassThru -NoNewWindow
+        Start-Sleep -Seconds 3
+
+        if (!$proc.HasExited) {
+          Write-Host "✅ run_server.cmd started successfully (PID $($proc.Id))"
+          Stop-Process -Id $proc.Id -Force
+        } else {
+          Write-Host "::error::run_server.cmd process exited prematurely (exit code: $($proc.ExitCode))"
+          exit 1
+        }

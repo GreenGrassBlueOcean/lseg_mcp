@@ -173,7 +173,7 @@ mcp = FastMCP("LSEG-MCP")
 
 @mcp.tool()
 async def search_financial_mapping(
-    query: str,
+    query: str | list[str],
     industry: str | None = None,
     statement: str | None = None,
     limit: int = 25,
@@ -182,12 +182,12 @@ async def search_financial_mapping(
     Fuzzy-search the LSEG Financials → Company Fundamentals mapping matrix.
 
     Args:
-        query: Search term (e.g. "Gross Profit", "RNTS", "Diluted EPS").
+        query: Search term (e.g. "Gross Profit", "RNTS", "Diluted EPS"). Can also be a list of terms.
         industry: Optional industry filter: "industrial", "bank", "insurance",
                   "property", "financial", "inv_trust", or "utility".
         statement: Optional statement filter: "Income Statement",
                    "Balance Sheet", "Cash Flow".
-        limit: Max results to return (default 25).
+        limit: Max results to return per query (default 25).
 
     Returns:
         Matching rows with legacy COA codes, target FCC formulas, polarity,
@@ -195,12 +195,21 @@ async def search_financial_mapping(
     """
     try:
         engine = _get_mapping()
-        results = engine.search(query, industry=industry, statement=statement, limit=limit)
-        if not results:
-            return f"No mapping found for query '{query}'" + (
-                f" in industry '{industry}'" if industry else ""
-            ) + "."
-        return json.dumps(results, indent=2, default=str)
+        queries = query if isinstance(query, list) else [query]
+        all_results = {}
+        
+        for q in queries:
+            results = engine.search(q, industry=industry, statement=statement, limit=limit)
+            all_results[q] = results
+            
+        if isinstance(query, str):
+            if not all_results[query]:
+                return f"No mapping found for query '{query}'" + (
+                    f" in industry '{industry}'" if industry else ""
+                ) + "."
+            return json.dumps(all_results[query], indent=2, default=str)
+            
+        return json.dumps(all_results, indent=2, default=str)
     except FileNotFoundError:
         return "**Error**: Mapping Excel file not found. Set LSEG_MAPPING_PATH or place the file in data/LSEG_Mapping.xlsx."
     except Exception as e:
@@ -327,7 +336,7 @@ async def draft_api_call(
 
 
 @mcp.tool()
-async def rescan_packages(update_packages: bool = True) -> str:
+async def rescan_packages(update_packages: bool = True, background: bool = False) -> str:
     """
     Force re-index of both Python (lseg-data) and R (RefinitivR) packages.
 
@@ -340,6 +349,8 @@ async def rescan_packages(update_packages: bool = True) -> str:
     Args:
         update_packages: If True, pull latest code before re-indexing.
                         Set False to just rebuild the index from current files.
+        background: If True, run the rescan in the background to avoid 
+                    client JSON-RPC timeouts on slow connections.
 
     Returns:
         Update status and diff summary.
@@ -347,6 +358,14 @@ async def rescan_packages(update_packages: bool = True) -> str:
     try:
         indexer = _get_indexer()
         rescan = _get_rescan()
+        
+        if background:
+            asyncio.create_task(rescan.rescan(indexer, update_packages=update_packages))
+            return json.dumps({
+                "status": "started", 
+                "message": "Rescan initiated in the background. Check logs for completion."
+            })
+            
         result = await rescan.rescan(indexer, update_packages=update_packages)
         return json.dumps(result, indent=2, default=str)
     except Exception as e:
