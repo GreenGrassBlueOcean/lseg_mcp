@@ -82,31 +82,11 @@ jobs:
         chmod +x run_server.sh
 
         # Launch the server, holding stdin open via Python, and verify it stays alive
-        python -c "
-import time, subprocess, sys
-print('Starting run_server.sh...')
-proc = subprocess.Popen(['./run_server.sh'], stdin=subprocess.PIPE)
-time.sleep(3)
-if proc.poll() is not None:
-    print(f'::error::run_server.sh exited prematurely with code {proc.returncode}')
-    sys.exit(1)
-print('✅ run_server.sh stayed alive successfully.')
-proc.terminate()
-"
+        python -c "import time, subprocess, sys; print('Starting run_server.sh...'); proc = subprocess.Popen(['./run_server.sh'], stdin=subprocess.PIPE); time.sleep(3); sys.exit(f'::error::run_server.sh exited prematurely with code {proc.returncode}') if proc.poll() is not None else None; print('✅ run_server.sh stayed alive successfully.'); proc.terminate()"
 
     - name: Validate run_server.cmd (Windows)
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
         # Launch the server, holding stdin open via Python, and verify it stays alive
-        python -c "
-import time, subprocess, sys
-print('Starting run_server.cmd...')
-proc = subprocess.Popen(['cmd.exe', '/c', 'run_server.cmd'], stdin=subprocess.PIPE)
-time.sleep(3)
-if proc.poll() is not None:
-    print(f'::error::run_server.cmd exited prematurely with code {proc.returncode}')
-    sys.exit(1)
-print('✅ run_server.cmd stayed alive successfully.')
-proc.terminate()
-"
+        python -c "import time, subprocess, sys; print('Starting run_server.cmd...'); proc = subprocess.Popen(['cmd.exe', '/c', 'run_server.cmd'], stdin=subprocess.PIPE); time.sleep(3); sys.exit(f'::error::run_server.cmd exited prematurely with code {proc.returncode}') if proc.poll() is not None else None; print('✅ run_server.cmd stayed alive successfully.'); proc.terminate()"
