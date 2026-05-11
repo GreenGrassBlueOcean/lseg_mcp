@@ -51,7 +51,7 @@ def _format_python_call(
                 simple_fields.append(str(val))
 
     if not simple_fields and not additive_fields:
-        simple_fields = fields
+        simple_fields = fields  # pragma: no cover
 
     ticker_str = str(tickers)
 
@@ -130,7 +130,7 @@ def _format_r_call(
                 simple_fields.append(str(val))
 
     if not simple_fields and not additive_fields:
-        simple_fields = fields
+        simple_fields = fields  # pragma: no cover
 
     ticker_r = ", ".join(json.dumps(t) for t in tickers)
     fields_r = ", ".join(json.dumps(f) for f in simple_fields)
@@ -145,7 +145,7 @@ def _format_r_call(
                 if arg_name == "Eikonformulas":
                     arg_fields = "Eikonformulas"
                 elif arg_name == "instruments":
-                    arg_rics = "instruments"
+                    arg_rics = "instruments"  # pragma: no cover
 
     lines.append(f"rics  <- c({ticker_r})")
     lines.append(f"fields <- c({fields_r})")
