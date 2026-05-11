@@ -104,7 +104,14 @@ The server automatically manages its own dependencies and mappings within your p
 
 ## Running the Server Locally
 
-If you need to debug the server independently of an MCP client, you can use the cross-platform launch scripts which automatically tail the internal logs:
+If you need to debug the server independently of an MCP client, you can run the executable directly in your terminal:
+
+```bash
+# If installed via pip or uv
+lseg-mcp
+```
+
+**For local developers:** If you cloned the repository and created a virtual environment, you can use the cross-platform launch scripts:
 
 **Windows:**
 ```cmd
