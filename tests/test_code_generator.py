@@ -11,7 +11,9 @@ def test_draft_api_call_python_simple():
     assert "import lseg.data as ld" in res
     assert "ld.open_session()" in res
     assert "universe=['AAPL.O']" in res
-    assert "fields=['TR.F.SGRP']" in res
+    # FCC code without office_field should NOT appear in fields, only as a WARNING
+    assert "SGRP" not in res.split("fields=")[-1].split(")")[0] if "fields=" in res else True
+    assert "# WARNING: 'SGRP' is an FCC code" in res
     assert "# NOTE: A test note" in res
 
 def test_draft_api_call_r_simple():
@@ -23,8 +25,9 @@ def test_draft_api_call_r_simple():
     )
     assert "library(Refinitiv)" in res
     assert 'rics  <- c("AAPL.O")' in res
-    assert 'fields <- c("TR.F.SGRP")' in res
-    assert "rd_GetData(" in res
+    # FCC code without office_field should trigger WARNING, not appear in fields
+    assert "# WARNING: 'SGRP' is an FCC code" in res
+    assert "rd_GetData(" in res  # Fallback to user-provided fields
     assert "# NOTE: A test note" in res
 
 def test_draft_api_call_additive_python():
@@ -35,6 +38,7 @@ def test_draft_api_call_additive_python():
         mapping_notes=[{"_additive": "SOLL+SLAP", "coa": "RDIV", "coa_description": "RDIV"}]
     )
     assert "fields=['SOLL', 'SLAP']" in res
+    assert "# TODO: replace with Office Field equivalents" in res
     assert "df['RDIV'] = df_components[['SOLL', 'SLAP']].sum(axis=1, min_count=1)" in res
 
 def test_draft_api_call_additive_r():
@@ -45,6 +49,7 @@ def test_draft_api_call_additive_r():
         mapping_notes=[{"_additive": "SOLL+SLAP", "coa": "RDIV", "coa_description": "RDIV"}]
     )
     assert 'components <- rd_GetData(' in res
+    assert '# TODO: replace with Office Field equivalents' in res
     assert 'result[[\'RDIV\']] <- rowSums(components[, c("SOLL", "SLAP"), drop=FALSE], na.rm = FALSE)' in res
 
 def test_draft_api_call_with_signature():
@@ -72,7 +77,7 @@ def test_draft_api_call_dynamic_r_args():
         language="r",
         tickers=["AAPL.O"],
         fields=["Gross Profit"],
-        mapping_notes=[{"_target_fcc": "SGRP", "coa": "SGRP"}],
+        mapping_notes=[{"office_field": "TR.GrossProfit", "_target_fcc": "SGRP", "coa": "SGRP"}],
         signature=sig
     )
     assert "Eikonformulas = fields" in res

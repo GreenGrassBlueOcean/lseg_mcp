@@ -112,7 +112,7 @@ async def test_rescan_packages(mocker):
 @pytest.mark.asyncio
 async def test_rescan_packages_background(mocker):
     class MockRescan:
-        async def rescan(self, indexer, update_packages):
+        def rescan(self, indexer, update_packages):
             return {"status": "ok"}
             
     mocker.patch("lseg_mcp.server._get_rescan", return_value=MockRescan())

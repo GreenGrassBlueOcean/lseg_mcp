@@ -41,14 +41,13 @@ def _format_python_call(
             additive_fields.append(note)
         else:
             val = note.get("office_field")
-            if not val or str(val) == "nan":
-                val = note.get("_target_fcc")
-                if val and str(val).strip() and "no fcc" not in str(val).lower():
-                    if not str(val).startswith("TR."):
-                        val = f"TR.F.{val}"
-            
-            if val and str(val).strip() and "no fcc" not in str(val).lower():
+            if val and str(val).strip() and str(val) != "nan":
                 simple_fields.append(str(val))
+            else:
+                # Raw FCC codes are not valid API fields
+                fcc = note.get("_target_fcc", note.get("coa", "unknown"))
+                if fcc and str(fcc).strip() and "no fcc" not in str(fcc).lower():
+                    lines.append(f"# WARNING: '{fcc}' is an FCC code with no known Office Field — resolve manually")
 
     if not simple_fields and not additive_fields:
         simple_fields = fields  # pragma: no cover
@@ -69,15 +68,13 @@ def _format_python_call(
     # Handle additive formulas
     for af in additive_fields:
         formula = af["_additive"]
-        components = [
-            c.strip() if c.strip().startswith("TR.") else f"TR.F.{c.strip()}"
-            for c in formula.split("+")
-        ]
+        components = [c.strip() for c in formula.split("+")]
         col_name = af.get("coa_description", formula).replace(" ", "_")
         lines.append(f"# Additive formula for {af.get('coa_description', formula)}: {formula}")
+        lines.append(f"# WARNING: components {components} are FCC codes — resolve each to its Office Field")
         lines.append(f"df_components = ld.get_data(")
         lines.append(f"    universe={ticker_str},")
-        lines.append(f"    fields={components},")
+        lines.append(f"    fields={components},  # TODO: replace with Office Field equivalents")
         lines.append(f")")
         lines.append(f"df['{col_name}'] = df_components[{components}].sum(axis=1, min_count=1)")
         lines.append("")
@@ -123,14 +120,13 @@ def _format_r_call(
             additive_fields.append(note)
         else:
             val = note.get("office_field")
-            if not val or str(val) == "nan":
-                val = note.get("_target_fcc")
-                if val and str(val).strip() and "no fcc" not in str(val).lower():
-                    if not str(val).startswith("TR."):
-                        val = f"TR.F.{val}"
-            
-            if val and str(val).strip() and "no fcc" not in str(val).lower():
+            if val and str(val).strip() and str(val) != "nan":
                 simple_fields.append(str(val))
+            else:
+                # Raw FCC codes are not valid API fields
+                fcc = note.get("_target_fcc", note.get("coa", "unknown"))
+                if fcc and str(fcc).strip() and "no fcc" not in str(fcc).lower():
+                    lines.append(f"# WARNING: '{fcc}' is an FCC code with no known Office Field — resolve manually")
 
     if not simple_fields and not additive_fields:
         simple_fields = fields  # pragma: no cover
@@ -165,16 +161,14 @@ def _format_r_call(
     # Handle additive formulas
     for af in additive_fields:
         formula = af["_additive"]
-        components = [
-            c.strip() if c.strip().startswith("TR.") else f"TR.F.{c.strip()}"
-            for c in formula.split("+")
-        ]
+        components = [c.strip() for c in formula.split("+")]
         col_name = af.get("coa_description", formula).replace(" ", "_")
         comp_r = ", ".join(json.dumps(c) for c in components)
         lines.append(f"# Additive formula for {af.get('coa_description', formula)}: {formula}")
+        lines.append(f"# WARNING: components {components} are FCC codes — resolve each to its Office Field")
         lines.append(f"components <- {func_name}(")
         lines.append(f"  {arg_rics} = rics,")
-        lines.append(f"  {arg_fields} = c({comp_r})")
+        lines.append(f"  {arg_fields} = c({comp_r})  # TODO: replace with Office Field equivalents")
         lines.append(f")")
         lines.append(f"result[['{col_name}']] <- rowSums(components[, c({comp_r}), drop=FALSE], na.rm = FALSE)")
         lines.append("")
