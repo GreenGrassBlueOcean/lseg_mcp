@@ -4,7 +4,7 @@
 [![codecov](https://codecov.io/gh/GreenGrassBlueOcean/lseg_mcp/graph/badge.svg)](https://codecov.io/gh/GreenGrassBlueOcean/lseg_mcp)
 [![Platform Validation](https://img.shields.io/badge/Platforms-Windows%20%7C%20macOS%20%7C%20Linux-success?logo=githubactions)](https://github.com/GreenGrassBlueOcean/lseg_mcp/actions/workflows/ci.yml)
 [![Python Support](https://img.shields.io/badge/Python-3.11%20%7C%203.12%20%7C%203.14-blue?logo=python)](https://github.com/GreenGrassBlueOcean/lseg_mcp/actions/workflows/ci.yml)
-[![PyPI version](https://badge.fury.io/py/lseg-mcp.svg)](https://badge.fury.io/py/lseg-mcp)
+![PyPI Compliant](https://img.shields.io/badge/PyPI-Compliant_(Not_Published)-yellow?logo=pypi)
 
 `lseg-mcp` is an asynchronous, introspective Model Context Protocol (MCP) server that acts as a definitive bridge between LLMs and the London Stock Exchange Group (LSEG) data APIs.
 
