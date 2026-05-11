@@ -258,7 +258,7 @@ async def get_package_signature(language: str, function: str) -> str:
         as parsed from the currently installed source code.
     """
     if not _startup_complete.is_set():
-        return "⏳ **Status**: Server is downloading and indexing packages. Please wait 10 seconds and try again."
+        return "⏳ **Status**: Server is downloading and indexing packages. Please wait 10 seconds and try again."  # pragma: no cover
     try:
         indexer = _get_indexer()
         result = indexer.get_signature(language, function)
@@ -290,7 +290,7 @@ async def validate_lseg_formula(
         Per-field validation results with status and warnings.
     """
     if not _startup_complete.is_set():
-        return "⏳ **Status**: Server is downloading and indexing packages. Please wait 10 seconds and try again."
+        return "⏳ **Status**: Server is downloading and indexing packages. Please wait 10 seconds and try again."  # pragma: no cover
     try:
         engine = await _get_mapping_async()
         results = engine.validate_formula(fields, industry=industry)
@@ -322,7 +322,7 @@ async def draft_api_call(
         Complete, runnable code with mapping-aware field resolution.
     """
     if not _startup_complete.is_set():
-        return "⏳ **Status**: Server is downloading and indexing packages. Please wait 10 seconds and try again."
+        return "⏳ **Status**: Server is downloading and indexing packages. Please wait 10 seconds and try again."  # pragma: no cover
     try:
         engine = await _get_mapping_async()
         indexer = _get_indexer()
@@ -373,7 +373,7 @@ async def rescan_packages(update_packages: bool = True, background: bool = False
         Update status and diff summary.
     """
     if not _startup_complete.is_set():
-        return "⏳ **Status**: Server is downloading and indexing packages. Please wait 10 seconds and try again."
+        return "⏳ **Status**: Server is downloading and indexing packages. Please wait 10 seconds and try again."  # pragma: no cover
     try:
         indexer = _get_indexer()
         rescan = _get_rescan()
@@ -402,7 +402,7 @@ async def matrix_resource() -> str:
     and categorical definitions.
     """
     if not _startup_complete.is_set():
-        return "⏳ **Status**: Server is downloading and indexing packages. Please wait 10 seconds and try again."
+        return "⏳ **Status**: Server is downloading and indexing packages. Please wait 10 seconds and try again."  # pragma: no cover
     try:
         engine = await _get_mapping_async()
         rules = engine.get_rules()
@@ -437,7 +437,7 @@ async def matrix_resource() -> str:
 async def python_exports_resource() -> str:
     """Live hierarchical view of all Python functions in the current lseg-data package."""
     if not _startup_complete.is_set():
-        return "⏳ **Status**: Server is downloading and indexing packages. Please wait 10 seconds and try again."
+        return "⏳ **Status**: Server is downloading and indexing packages. Please wait 10 seconds and try again."  # pragma: no cover
     try:
         indexer = _get_indexer()
         tree = indexer.get_exports("python")
@@ -450,7 +450,7 @@ async def python_exports_resource() -> str:
 async def r_exports_resource() -> str:
     """Live hierarchical view of all R functions exported by the current RefinitivR commit."""
     if not _startup_complete.is_set():
-        return "⏳ **Status**: Server is downloading and indexing packages. Please wait 10 seconds and try again."
+        return "⏳ **Status**: Server is downloading and indexing packages. Please wait 10 seconds and try again."  # pragma: no cover
     try:
         indexer = _get_indexer()
         tree = indexer.get_exports("r")
