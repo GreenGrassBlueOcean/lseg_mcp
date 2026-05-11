@@ -89,4 +89,4 @@ jobs:
       shell: pwsh
       run: |
         # Launch the server, holding stdin open via Python, and verify it stays alive
-        python -c "import time, subprocess, sys; print('Starting run_server.cmd...'); proc = subprocess.Popen(['cmd.exe', '/c', 'run_server.cmd'], stdin=subprocess.PIPE); time.sleep(3); sys.exit(f'::error::run_server.cmd exited prematurely with code {proc.returncode}') if proc.poll() is not None else None; print('✅ run_server.cmd stayed alive successfully.'); proc.terminate()"
+        python -c "import time, subprocess, sys; print('Starting run_server.cmd...'); proc = subprocess.Popen(['cmd.exe', '/c', 'run_server.cmd'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE); time.sleep(3); poll = proc.poll(); sys.exit(f'::error::run_server.cmd exited prematurely with code {poll}\nSTDOUT:\n{proc.stdout.read().decode(errors=\"replace\")}\nSTDERR:\n{proc.stderr.read().decode(errors=\"replace\")}') if poll is not None else None; print('✅ run_server.cmd stayed alive successfully.'); proc.terminate()"
