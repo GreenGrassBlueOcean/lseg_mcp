@@ -106,6 +106,13 @@ Both the Python and R indexers operate purely via static analysis (AST / regex).
 ### 4.4 Schema-Aware Multi-Header Parsing
 The LSEG mapping Excel has a complex multi-header layout. The engine explicitly skips the first 3 header rows, assigns canonical column names, forward-fills section headers, and drops separator columns — ensuring robust parsing regardless of minor formatting changes.
 
+### 4.5 Enterprise Resilience & CI/CD
+Following a rigorous audit, the architecture incorporates enterprise-grade protections against common MCP vulnerabilities:
+- **Asynchronous Stdio Isolation**: Long-running background operations (e.g., `git clone`, `pip install`) are aggressively offloaded to dedicated `asyncio` task pools. This guarantees the JSON-RPC event loop on `sys.stdin` is never starved, entirely preventing client-side timeouts during cold starts or heavy network ops.
+- **Cross-Platform Launch Integrity**: Shell wrapper scripts (`run_server.sh` and `run_server.cmd`) are strictly bound by `.gitattributes` to enforce correct OS-level line endings (LF vs CRLF). 
+- **Automated CI/CD Validation**: A multi-platform GitHub Actions workflow rigorously tests the launch scripts on Windows, macOS, and Linux runners. It uses advanced non-blocking `subprocess.Popen` orchestration to verify that standard I/O pipes properly remain open and prevent premature EOF closures across all environments.
+- **O(1) Batch Queries**: The semantic search engine supports batched query lists natively, reducing the roundtrip latency between the LLM and the MCP server.
+
 ---
 
 ## 5. End-to-End Workflow
