@@ -9,6 +9,31 @@
 
 It enables AI agents to confidently draft perfectly formatted financial data retrieval pipelines in both Python (`lseg-data`) and R (`RefinitivR`).
 
+## Agentic Interaction Examples
+
+Once connected to your MCP client (like Claude Desktop or Antigravity), you can simply use natural language to draft perfect, mapping-aware financial code.
+
+### Example 1: R (`RefinitivR`)
+
+**User Prompt:**
+> "Hey, write an R script using RefinitivR to pull the last 10 years of Gross Profit, EBITDA, and Basic EPS for AAPL.O and MSFT.O. Make sure to map these to the modern FCC formulas."
+
+**AI Agent Action:**
+The agent will autonomously use the `lseg-mcp` tools to:
+1. Call `search_financial_mapping` to identify the correct FCC mappings (e.g., resolving legacy COA codes for Gross Profit to their modern `TR.GrossProfit` equivalents, respecting industry routes).
+2. Call `get_package_signature` to retrieve the live, exact AST-parsed signature for `rd_GetData` from the `RefinitivR` package.
+3. Call `draft_api_call` to merge the mappings with the AST signature, instantly generating a syntactically flawless R script.
+
+### Example 2: Python (`lseg-data`)
+
+**User Prompt:**
+> "I need a Python script using lseg-data to get the daily Total Return for the S&P 500 constituents over the last 3 months."
+
+**AI Agent Action:**
+1. The agent searches the mapping index to confirm the exact parameter for 'Total Return' under the Python SDK mappings.
+2. It calls `get_package_signature` for the `lseg.data.get_data` Python function to verify default arguments.
+3. It calls `draft_api_call` to generate the runnable Python boilerplate, ensuring no deprecated variables are used.
+
 ## Features
 
 - **Semantic Mapping Engine**: Translates legacy Refinitiv COA codes to industry-specific modern LSEG FCC formulas automatically. Handles additive arrays, ASR bracket notation, and industry routing.
@@ -112,30 +137,6 @@ The project maintains **98% absolute line coverage**. To run the test suite:
 pytest --cov=src --cov-report=term-missing tests/
 ```
 
-## Agentic Interaction Examples
-
-Once connected to your MCP client (like Claude Desktop or Antigravity), you can simply use natural language to draft perfect, mapping-aware financial code.
-
-### Example 1: R (`RefinitivR`)
-
-**User Prompt:**
-> "Hey, write an R script using RefinitivR to pull the last 10 years of Gross Profit, EBITDA, and Basic EPS for AAPL.O and MSFT.O. Make sure to map these to the modern FCC formulas."
-
-**AI Agent Action:**
-The agent will autonomously use the `lseg-mcp` tools to:
-1. Call `search_financial_mapping` to identify the correct FCC mappings (e.g., resolving legacy COA codes for Gross Profit to their modern `TR.GrossProfit` equivalents, respecting industry routes).
-2. Call `get_package_signature` to retrieve the live, exact AST-parsed signature for `rd_GetData` from the `RefinitivR` package.
-3. Call `draft_api_call` to merge the mappings with the AST signature, instantly generating a syntactically flawless R script.
-
-### Example 2: Python (`lseg-data`)
-
-**User Prompt:**
-> "I need a Python script using lseg-data to get the daily Total Return for the S&P 500 constituents over the last 3 months."
-
-**AI Agent Action:**
-1. The agent searches the mapping index to confirm the exact parameter for 'Total Return' under the Python SDK mappings.
-2. It calls `get_package_signature` for the `lseg.data.get_data` Python function to verify default arguments.
-3. It calls `draft_api_call` to generate the runnable Python boilerplate, ensuring no deprecated variables are used.
 ## Architecture
 
 For a comprehensive dive into the internal semantic mapping engine, the AST parser bracket-balancing algorithms, and the polyglot generator templates, please see [ARCHITECTURE.md](ARCHITECTURE.md).
