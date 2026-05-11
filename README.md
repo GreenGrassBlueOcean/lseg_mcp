@@ -112,6 +112,19 @@ The project maintains **98% absolute line coverage**. To run the test suite:
 pytest --cov=src --cov-report=term-missing tests/
 ```
 
+## Agentic Interaction Example
+
+Once connected to your MCP client (like Claude Desktop or Antigravity), you can simply use natural language to draft perfect, mapping-aware financial code.
+
+**User Prompt:**
+> "Hey, write an R script using RefinitivR to pull the last 10 years of Gross Profit, EBITDA, and Basic EPS for AAPL.O and MSFT.O. Make sure to map these to the modern FCC formulas."
+
+**AI Agent Action:**
+The agent will autonomously use the `lseg-mcp` tools to:
+1. Call `search_financial_mapping` to identify the correct FCC mappings (e.g., resolving legacy COA codes for Gross Profit to their modern `TR.GrossProfit` equivalents, respecting industry routes).
+2. Call `get_package_signature` to retrieve the live, exact AST-parsed signature for `rd_GetData` from the `RefinitivR` package.
+3. Call `draft_api_call` to merge the mappings with the AST signature, instantly generating a syntactically flawless R script.
+
 ## Architecture
 
 For a comprehensive dive into the internal semantic mapping engine, the AST parser bracket-balancing algorithms, and the polyglot generator templates, please see [ARCHITECTURE.md](ARCHITECTURE.md).
