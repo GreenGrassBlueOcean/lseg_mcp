@@ -142,3 +142,37 @@ def test_draft_api_call_python_no_parameters():
         mapping_notes=[{"office_field": "TR.TotalRevenue", "_target_fcc": "STLR", "coa": "RTLR"}],
     )
     assert "parameters=" not in res
+
+def test_draft_api_call_r_no_parameters():
+    """Verify parameters= None produces no parameters line in R."""
+    res = draft_api_call(
+        language="r",
+        tickers=["AAPL.O"],
+        fields=["Revenue"],
+        mapping_notes=[{"office_field": "TR.TotalRevenue", "_target_fcc": "STLR", "coa": "RTLR"}],
+    )
+    assert "Parameters =" not in res
+
+def test_draft_api_call_python_parameters_empty():
+    """Verify parameters={} is handled gracefully."""
+    res = draft_api_call(
+        language="python",
+        tickers=["AAPL.O"],
+        fields=["Revenue"],
+        mapping_notes=[{"office_field": "TR.TotalRevenue", "_target_fcc": "STLR", "coa": "RTLR"}],
+        parameters={},
+    )
+    # An empty dict evaluates to False in python boolean contexts, but here it's truthy if passed directly, 
+    # but wait, `if parameters:` is false for `{}`! So it should NOT output parameters.
+    assert "parameters=" not in res
+
+def test_draft_api_call_r_parameters_mixed_types():
+    """Verify parameters with numbers, booleans, and strings format correctly in R."""
+    res = draft_api_call(
+        language="r",
+        tickers=["AAPL.O"],
+        fields=["Revenue"],
+        mapping_notes=[{"office_field": "TR.TotalRevenue", "_target_fcc": "STLR", "coa": "RTLR"}],
+        parameters={"SDate": "0CY", "Period": 1, "IncludeHistory": True},
+    )
+    assert 'Parameters = list(SDate = "0CY", Period = 1, IncludeHistory = True)' in res

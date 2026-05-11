@@ -141,6 +141,28 @@ def mock_mapping_data():
             "fcc_bank": "",
             "fcc_insurance": "",
             "overall_match": "1. Identical",
+        },
+        # Bank-only applicability
+        {
+            "statement": "Balance Sheet",
+            "line_id": 70,
+            "coa": "RDEBT_BANK",
+            "coa_description": "Bank Debt",
+            "office_field": "TR.BankDebt",
+            "label": "Bank Debt",
+            "polarity": "Positive",
+            "display": "Regular",
+            "bank_applicable": True,
+            "industry_applicable": False,
+            "insurance_applicable": False,
+            "utility_applicable": False,
+            "fcc_industrial": "No FCC Match",
+            "fcc_inv_trust": "",
+            "fcc_financial": "",
+            "fcc_property": "",
+            "fcc_bank": "BDEBT",
+            "fcc_insurance": "",
+            "overall_match": "1. Identical",
         }
     ]
     df = pd.DataFrame(data)

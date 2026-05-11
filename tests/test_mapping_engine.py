@@ -5,7 +5,7 @@ from lseg_mcp.mapping_engine import MappingEngine, COLUMN_NAMES
 def test_load_and_parse(mock_pandas_read_excel):
     engine = MappingEngine(xlsx_path="dummy.xlsx")
     df = engine.df
-    assert len(df) == 6
+    assert len(df) == 7
     assert engine.explanations == "Line 1\nLine 2"
 
 def test_search_fuzzy_matching(mock_pandas_read_excel):
@@ -49,7 +49,7 @@ def test_enrichment_additive(mock_pandas_read_excel):
 
 def test_enrichment_asr_bracket(mock_pandas_read_excel):
     engine = MappingEngine(xlsx_path="dummy.xlsx")
-    res = engine.search("RDEBT")
+    res = [r for r in engine.search("RDEBT") if r["coa"] == "RDEBT"]
     assert len(res) == 1
     assert res[0].get("_asr_flagged") is True
     assert res[0].get("_asr_code") == "AFUL"
@@ -159,3 +159,12 @@ def test_enrichment_all_applicable_no_scope_note(mock_pandas_read_excel):
     # All False means not_applicable has items but applicable_industries is empty
     # So the condition `if not_applicable and applicable_industries` is False -> no note
     assert len(scope_notes) == 0
+
+def test_enrichment_bank_only_scope_note(mock_pandas_read_excel):
+    """Verify industry applicability flags are surfaced in _notes for bank-only field."""
+    engine = MappingEngine(xlsx_path="dummy.xlsx")
+    res = engine.search("RDEBT_BANK")
+    assert len(res) == 1
+    notes = " ".join(res[0]["_notes"])
+    assert "available for Bank" in notes
+    assert "NOT available for Industrial, Insurance, Utility" in notes

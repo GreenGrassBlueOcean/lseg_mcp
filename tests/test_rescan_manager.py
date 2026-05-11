@@ -237,3 +237,14 @@ async def test_get_pip_version_not_installed(mocker, mock_subprocess):
     manager = RescanManager()
     version = await manager._get_pip_version()
     assert version == "unknown"
+
+@pytest.mark.asyncio
+async def test_get_pip_version_malformed_output(mocker, mock_subprocess):
+    """Verify _get_pip_version returns 'unknown' when Version line is missing."""
+    mocker.patch(
+        "asyncio.create_subprocess_exec",
+        side_effect=mock_subprocess(stdout=b"Name: lseg-data\nSummary: LSEG SDK\n"),
+    )
+    manager = RescanManager()
+    version = await manager._get_pip_version()
+    assert version == "unknown"
