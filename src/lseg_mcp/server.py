@@ -50,8 +50,8 @@ _handler.setFormatter(logging.Formatter("%(asctime)s [%(name)s] %(message)s", da
 logger.addHandler(_handler)
 
 # Also log to a file so the user can always review startup progress
-_LOG_DIR = Path(__file__).resolve().parents[2] / ".lseg_cache"
-_LOG_DIR.mkdir(parents=True, exist_ok=True)
+from lseg_mcp._paths import get_log_dir, get_mapping_xlsx, get_r_repo_path
+_LOG_DIR = get_log_dir()
 class FlushingFileHandler(logging.FileHandler):
     """FileHandler that flushes to disk immediately so tails (Get-Content -Wait) work."""
     def emit(self, record):
@@ -69,19 +69,8 @@ logger.addHandler(_file_handler)
 logger.setLevel(logging.INFO)
 
 # ── Resolve paths ────────────────────────────────────────────────────
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
-
-def _find_mapping_file(base_dir: Path) -> Path:
-    """Robust cross-platform fallback for case-sensitive Linux file systems."""
-    data_dir = base_dir / "data"
-    if data_dir.exists():
-        for f in data_dir.iterdir():
-            if f.name.lower() == "lseg_mapping.xlsx":
-                return f
-    return base_dir / "data" / "LSEG_Mapping.xlsx"  # pragma: no cover
-
-_DEFAULT_XLSX = _find_mapping_file(_PROJECT_ROOT)
-_DEFAULT_R_REPO = _PROJECT_ROOT / ".lseg_cache" / "RefinitivR"
+_DEFAULT_XLSX = get_mapping_xlsx()
+_DEFAULT_R_REPO = get_r_repo_path()
 
 # ── Singletons (initialised lazily on first tool call) ───────────────
 _mapping: MappingEngine | None = None
@@ -93,8 +82,7 @@ _startup_complete = threading.Event()
 async def _get_mapping_async() -> MappingEngine:
     global _mapping
     if _mapping is None:
-        xlsx_path = os.environ.get("LSEG_MAPPING_PATH", str(_DEFAULT_XLSX))
-        _mapping = MappingEngine(xlsx_path)
+        _mapping = MappingEngine(str(_DEFAULT_XLSX))
         # Offload the blocking CPU work to a background thread
         await asyncio.to_thread(_mapping._load)
     return _mapping
@@ -103,16 +91,14 @@ async def _get_mapping_async() -> MappingEngine:
 def _get_indexer() -> PackageIndexer:
     global _indexer
     if _indexer is None:
-        r_repo = os.environ.get("REFINITIVR_PATH", str(_DEFAULT_R_REPO))
-        _indexer = PackageIndexer(r_repo_path=r_repo)
+        _indexer = PackageIndexer(r_repo_path=str(_DEFAULT_R_REPO))
     return _indexer
 
 
 def _get_rescan() -> RescanManager:
     global _rescan
     if _rescan is None:
-        r_repo = os.environ.get("REFINITIVR_PATH", str(_DEFAULT_R_REPO))
-        _rescan = RescanManager(r_repo_path=r_repo)
+        _rescan = RescanManager(r_repo_path=str(_DEFAULT_R_REPO))
     return _rescan
 
 
@@ -124,8 +110,7 @@ def _needs_index() -> bool:
     """
     if os.environ.get("LSEG_FORCE_REINDEX", "").strip() == "1":
         return True
-    r_repo = os.environ.get("REFINITIVR_PATH", str(_DEFAULT_R_REPO))
-    r_missing = not Path(r_repo).joinpath("R").exists()
+    r_missing = not _DEFAULT_R_REPO.joinpath("R").exists()
     try:
         py_missing = importlib.util.find_spec("lseg.data") is None
     except (ModuleNotFoundError, ValueError):

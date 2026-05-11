@@ -72,7 +72,8 @@ class MappingEngine:
 
     def __init__(self, xlsx_path: str | Path | None = None):
         if xlsx_path is None:
-            xlsx_path = Path(__file__).resolve().parents[2] / "data" / "LSEG_Mapping.xlsx"
+            from lseg_mcp._paths import get_mapping_xlsx
+            xlsx_path = get_mapping_xlsx()
         self._xlsx_path = Path(xlsx_path)
         self._df: pd.DataFrame | None = None
         self._explanations: str | None = None

@@ -103,7 +103,8 @@ class RescanManager:
         python_pip: str | None = None,
     ):
         if r_repo_path is None:
-            r_repo_path = str(Path(__file__).resolve().parents[2] / ".lseg_cache" / "RefinitivR")
+            from lseg_mcp._paths import get_r_repo_path
+            r_repo_path = str(get_r_repo_path())
         self.r_repo_path = Path(r_repo_path)
         if python_pip is None:
             self.python_pip = [sys.executable, "-m", "pip"]

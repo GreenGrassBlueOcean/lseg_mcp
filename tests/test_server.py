@@ -208,7 +208,7 @@ async def test_singletons(mocker, mock_pandas_read_excel):
 
 def test_needs_index_cold_start(mocker, tmp_path):
     """Both R and Python missing -> needs index."""
-    mocker.patch.dict(os.environ, {"REFINITIVR_PATH": str(tmp_path / "no_repo")})
+    mocker.patch.object(server, "_DEFAULT_R_REPO", tmp_path / "no_repo")
     mocker.patch("lseg_mcp.server.importlib.util.find_spec", return_value=None)
     assert server._needs_index() is True
 
@@ -217,7 +217,7 @@ def test_needs_index_warm_start(mocker, tmp_path):
     """Both R and Python present -> no index needed."""
     r_dir = tmp_path / "RefinitivR" / "R"
     r_dir.mkdir(parents=True)
-    mocker.patch.dict(os.environ, {"REFINITIVR_PATH": str(tmp_path / "RefinitivR")})
+    mocker.patch.object(server, "_DEFAULT_R_REPO", tmp_path / "RefinitivR")
     mocker.patch("lseg_mcp.server.importlib.util.find_spec", return_value="dummy_spec")
     assert server._needs_index() is False
 
@@ -226,17 +226,15 @@ def test_needs_index_force_reindex(mocker, tmp_path):
     """LSEG_FORCE_REINDEX=1 forces re-index even when warm."""
     r_dir = tmp_path / "RefinitivR" / "R"
     r_dir.mkdir(parents=True)
-    mocker.patch.dict(os.environ, {
-        "REFINITIVR_PATH": str(tmp_path / "RefinitivR"),
-        "LSEG_FORCE_REINDEX": "1",
-    })
+    mocker.patch.object(server, "_DEFAULT_R_REPO", tmp_path / "RefinitivR")
+    mocker.patch.dict(os.environ, {"LSEG_FORCE_REINDEX": "1"})
     mocker.patch("lseg_mcp.server.importlib.util.find_spec", return_value="dummy_spec")
     assert server._needs_index() is True
 
 
 def test_needs_index_only_r_missing(mocker, tmp_path):
     """R missing but Python present -> needs index."""
-    mocker.patch.dict(os.environ, {"REFINITIVR_PATH": str(tmp_path / "no_repo")})
+    mocker.patch.object(server, "_DEFAULT_R_REPO", tmp_path / "no_repo")
     mocker.patch("lseg_mcp.server.importlib.util.find_spec", return_value="dummy_spec")
     assert server._needs_index() is True
 
@@ -245,7 +243,7 @@ def test_needs_index_only_python_missing(mocker, tmp_path):
     """Python missing but R present -> needs index."""
     r_dir = tmp_path / "RefinitivR" / "R"
     r_dir.mkdir(parents=True)
-    mocker.patch.dict(os.environ, {"REFINITIVR_PATH": str(tmp_path / "RefinitivR")})
+    mocker.patch.object(server, "_DEFAULT_R_REPO", tmp_path / "RefinitivR")
     mocker.patch("lseg_mcp.server.importlib.util.find_spec", return_value=None)
     assert server._needs_index() is True
 
@@ -254,7 +252,7 @@ def test_needs_index_python_module_not_found(mocker, tmp_path):
     """Python parent module missing -> needs index (gracefully handles exception)."""
     r_dir = tmp_path / "RefinitivR" / "R"
     r_dir.mkdir(parents=True)
-    mocker.patch.dict(os.environ, {"REFINITIVR_PATH": str(tmp_path / "RefinitivR")})
+    mocker.patch.object(server, "_DEFAULT_R_REPO", tmp_path / "RefinitivR")
     mocker.patch("lseg_mcp.server.importlib.util.find_spec", side_effect=ModuleNotFoundError("No module named 'lseg'"))
     assert server._needs_index() is True
 

@@ -171,7 +171,8 @@ class RPackageIndex:
 
     def __init__(self, repo_path: str | None = None):
         if repo_path is None:
-            repo_path = str(Path(__file__).resolve().parents[2] / ".lseg_cache" / "RefinitivR")
+            from lseg_mcp._paths import get_r_repo_path
+            repo_path = str(get_r_repo_path())
         self.repo_path = Path(repo_path)
         self._functions: list[dict[str, Any]] = []
         self._fingerprint: str = ""
