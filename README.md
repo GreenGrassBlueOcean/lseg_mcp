@@ -142,11 +142,16 @@ tail -f ~/.cache/lseg-mcp/logs/startup.log
 ```
 
 ### Enabling Cache Debug Logs
-During development, you can inspect cache events (e.g., `[CACHE HIT] search_financial_mapping`, `[CACHE MISS]`, etc.) by setting the log level to `DEBUG` inside `src/lseg_mcp/server.py`:
+During development, you can inspect cache events by setting the log level to `DEBUG` inside `src/lseg_mcp/server.py`:
 ```python
 logger.setLevel(logging.DEBUG)
 ```
-These logs will stream directly into the `startup.log` file.
+These logs will stream directly into the `startup.log` file:
+```text
+2026-05-21 19:56:35 [lseg_mcp] [CACHE MISS] search_financial_mapping (key: (('AAPL.O',), None, None, 25))
+2026-05-21 19:56:35 [lseg_mcp] [CACHE LOAD] search_financial_mapping resolved in 14.2ms
+2026-05-21 19:56:40 [lseg_mcp] [CACHE HIT] search_financial_mapping (key: (('AAPL.O',), None, None, 25))
+```
 
 ## Testing
 

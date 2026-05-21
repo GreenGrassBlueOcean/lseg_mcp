@@ -84,14 +84,18 @@ class AsyncTTLCache:
         if key in self.cache:
             val, expiry = self.cache[key]
             if now < expiry:
-                logger.debug("[CACHE HIT] %s", self.name)
+                logger.debug("[CACHE HIT] %s (key: %s)", self.name, key)
                 return val
-            logger.debug("[CACHE EXPIRED] %s", self.name)
+            logger.debug("[CACHE EXPIRED] %s (key: %s)", self.name, key)
             del self.cache[key]
         else:
-            logger.debug("[CACHE MISS] %s", self.name)
+            logger.debug("[CACHE MISS] %s (key: %s)", self.name, key)
         
+        start_time = time.time()
         val = await coro_func(*args, **kwargs)
+        elapsed = (time.time() - start_time) * 1000.0
+        logger.debug("[CACHE LOAD] %s resolved in %.1fms", self.name, elapsed)
+        
         if not (isinstance(val, str) and val.startswith("**Error**")):
             self.cache[key] = (val, now + self.ttl)
         return val
