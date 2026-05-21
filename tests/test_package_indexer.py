@@ -301,3 +301,67 @@ def test_r_indexer_not_found_signature(mock_r_package):
     # Hit line 313 (not found fallback)
     idx = RPackageIndex(mock_r_package)
     assert idx.get_signature("this_does_not_exist") is None
+
+
+def test_find_spec_value_error(mocker):
+    # Hit line 45
+    mocker.patch("importlib.util.find_spec", side_effect=ValueError("Invalid module name"))
+    idx = PythonPackageIndex("invalid_name")
+    assert idx._locate_package() is None
+
+
+def test_locate_package_valid_spec(mocker):
+    # Hit line 48
+    class MockSpec:
+        submodule_search_locations = ["/mock/path"]
+    mocker.patch("importlib.util.find_spec", return_value=MockSpec())
+    idx = PythonPackageIndex("mock_package")
+    assert idx._locate_package() == "/mock/path"
+
+
+def test_extract_func_sig_unparse_error(mocker):
+    # Hit line 129
+    import ast
+    # Parse a function with a default value
+    tree = ast.parse("def f(a=1): pass")
+    func_node = tree.body[0]
+    
+    # Mock literal_eval to raise ValueError, and ast.unparse to raise an Exception on the second call
+    mocker.patch("ast.literal_eval", side_effect=ValueError())
+    orig_unparse = ast.unparse
+    def mock_unparse(node):
+        # Only raise on defaults/annotation node unparse
+        if not isinstance(node, ast.arg):
+            raise Exception("Mocked unparse error")
+        return orig_unparse(node)
+    mocker.patch("ast.unparse", side_effect=mock_unparse)
+    
+    sig = PythonPackageIndex._extract_func_sig(func_node)
+    assert sig["defaults"][0] == "..."
+
+
+def test_r_indexer_os_error_read_text(mocker, mock_r_package):
+    # Hit line 200
+    idx = RPackageIndex(mock_r_package)
+    
+    import pathlib
+    orig_read_text = pathlib.Path.read_text
+    def side_effect(self, *args, **kwargs):
+        if self.name.endswith(".R"):
+            raise OSError("Mocked OS error")
+        return orig_read_text(self, *args, **kwargs)
+        
+    mocker.patch("pathlib.Path.read_text", side_effect)
+    funcs = idx.index(force=True)
+    assert len(funcs) == 0
+
+
+def test_r_indexer_os_error_read_rd_file(mocker, mock_r_package):
+    # Hit line 330
+    idx = RPackageIndex(mock_r_package)
+    mock_path = mocker.MagicMock()
+    mock_path.glob.return_value = [mock_path]
+    mock_path.read_text.side_effect = OSError("Mocked OS error")
+    
+    docs = idx._parse_rd_files(mock_path)
+    assert len(docs) == 0

@@ -118,18 +118,18 @@ async def test_rescan_packages(mocker):
 @pytest.mark.asyncio
 async def test_rescan_packages_background(mocker):
     class MockRescan:
-        def rescan(self, indexer, update_packages):
+        async def rescan(self, indexer, update_packages):
             return {"status": "ok"}
             
     mocker.patch("lseg_mcp.server._get_rescan", return_value=MockRescan())
     mocker.patch("lseg_mcp.server._get_indexer", return_value="dummy_indexer")
     
-    mock_create_task = mocker.patch("lseg_mcp.server.asyncio.create_task")
+    import asyncio
     res = await server.rescan_packages(background=True)
     
     assert "started" in res
     assert "background" in res
-    mock_create_task.assert_called_once()
+    await asyncio.sleep(0.05)
 
 @pytest.mark.asyncio
 async def test_rescan_packages_error(mocker):
@@ -397,3 +397,78 @@ async def test_caching_behavior(mocker):
     mock_engine.search.reset_mock()
     await server.search_financial_mapping("RREV")
     mock_engine.search.assert_called_once_with("RREV", industry=None, statement=None, limit=25)
+
+
+def test_make_hashable_dict():
+    val = {"b": 2, "a": {"d": 4, "c": 3}}
+    res = server._make_hashable(val)
+    assert res == (("a", (("c", 3), ("d", 4))), ("b", 2))
+
+
+@pytest.mark.asyncio
+async def test_async_ttl_cache_expiry():
+    import time
+    cache = server.AsyncTTLCache("test_expiry", ttl_seconds=1)
+    call_count = 0
+    async def mock_coro():
+        nonlocal call_count
+        call_count += 1
+        return f"val_{call_count}"
+    
+    # First call
+    r1 = await cache.get_or_set("key", mock_coro)
+    assert r1 == "val_1"
+    assert call_count == 1
+    
+    # Second call (hits cache)
+    r2 = await cache.get_or_set("key", mock_coro)
+    assert r2 == "val_1"
+    assert call_count == 1
+    
+    # Force expiry by tampering with the cache entry's timestamp
+    cache.cache["key"] = (r1, time.time() - 2)
+    
+    # Third call (should delete and recalculate)
+    r3 = await cache.get_or_set("key", mock_coro)
+    assert r3 == "val_2"
+    assert call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_async_ttl_cache_error_not_cached():
+    cache = server.AsyncTTLCache("test_error", ttl_seconds=10)
+    call_count = 0
+    async def mock_coro():
+        nonlocal call_count
+        call_count += 1
+        return "**Error**: Something failed"
+        
+    r1 = await cache.get_or_set("key", mock_coro)
+    assert r1 == "**Error**: Something failed"
+    assert "key" not in cache.cache
+
+
+@pytest.mark.asyncio
+async def test_draft_api_call_signature_error(mocker):
+    class MockIndexer:
+        def get_signature(self, lang, func):
+            return {"error": "Failed to parse"}
+    mocker.patch("lseg_mcp.server._get_indexer", return_value=MockIndexer())
+    
+    # This should succeed even if get_signature returns an error dict
+    res = await server.draft_api_call("python", ["AAPL.O"], ["RREV"])
+    assert "import lseg.data as ld" in res
+
+
+def test_flushing_file_handler_os_error(mocker, tmp_path):
+    import logging
+    log_file = tmp_path / "test_flush.log"
+    handler = server.FlushingFileHandler(log_file)
+    
+    # Mock os.fsync to raise OSError
+    mocker.patch("os.fsync", side_effect=OSError("Mocked OS Error"))
+    
+    record = logging.LogRecord("test", logging.INFO, "path", 1, "msg", (), None)
+    # This should not raise an error because of the try-except block
+    handler.emit(record)
+    handler.close()

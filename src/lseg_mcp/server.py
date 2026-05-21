@@ -73,7 +73,8 @@ _DEFAULT_XLSX = get_mapping_xlsx()
 _DEFAULT_R_REPO = get_r_repo_path()
 class AsyncTTLCache:
     """A simple asynchronous TTL cache."""
-    def __init__(self, ttl_seconds: int):
+    def __init__(self, name: str, ttl_seconds: int):
+        self.name = name
         self.ttl = ttl_seconds
         self.cache = {}
 
@@ -83,8 +84,12 @@ class AsyncTTLCache:
         if key in self.cache:
             val, expiry = self.cache[key]
             if now < expiry:
+                logger.debug("[CACHE HIT] %s", self.name)
                 return val
+            logger.debug("[CACHE EXPIRED] %s", self.name)
             del self.cache[key]
+        else:
+            logger.debug("[CACHE MISS] %s", self.name)
         
         val = await coro_func(*args, **kwargs)
         if not (isinstance(val, str) and val.startswith("**Error**")):
@@ -104,10 +109,10 @@ def _make_hashable(val: Any) -> Any:
     return val
 
 
-_search_mapping_cache = AsyncTTLCache(ttl_seconds=300)
-_mapping_rules_cache = AsyncTTLCache(ttl_seconds=1800)
-_package_signature_cache = AsyncTTLCache(ttl_seconds=300)
-_validate_formula_cache = AsyncTTLCache(ttl_seconds=300)
+_search_mapping_cache = AsyncTTLCache("search_financial_mapping", ttl_seconds=300)
+_mapping_rules_cache = AsyncTTLCache("get_mapping_rules", ttl_seconds=1800)
+_package_signature_cache = AsyncTTLCache("get_package_signature", ttl_seconds=300)
+_validate_formula_cache = AsyncTTLCache("validate_lseg_formula", ttl_seconds=300)
 
 
 # ── Singletons (initialised lazily on first tool call) ───────────────
@@ -559,5 +564,5 @@ def main():
 
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     main()
