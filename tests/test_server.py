@@ -6,8 +6,10 @@ from lseg_mcp import server
 
 @pytest.fixture(autouse=True)
 def mock_environment(mocker, mock_pandas_read_excel):
-    # Set the mapping path to our dummy so `_get_mapping` loads the mock
-    mocker.patch.dict(os.environ, {"LSEG_MAPPING_PATH": "dummy.xlsx"})
+    # Set the mapping path to our dummy so `_get_mapping` loads the mock.
+    # Allow env mutation by default so rescan tests aren't blocked in CI
+    # (the guard is explicitly tested by dedicated test_env_mutation_* tests).
+    mocker.patch.dict(os.environ, {"LSEG_MAPPING_PATH": "dummy.xlsx", "LSEG_ALLOW_ENV_MUTATION": "1"})
     
     server._mapping = None
     server._indexer = None
