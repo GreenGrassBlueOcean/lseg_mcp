@@ -12,6 +12,12 @@ def mock_environment(mocker, mock_pandas_read_excel):
     server._indexer = None
     server._rescan = None
     server._startup_complete.set()
+    
+    # Reset caches for isolation
+    server._search_mapping_cache.clear()
+    server._mapping_rules_cache.clear()
+    server._package_signature_cache.clear()
+    server._validate_formula_cache.clear()
 
 @pytest.mark.asyncio
 async def test_search_financial_mapping():
@@ -344,3 +350,50 @@ async def test_auto_index_partial_cold_r_present(mocker, tmp_path):
     mock_rescan.update_r_package.assert_not_awaited()  # R was present, no clone
     mock_rescan.update_python_package.assert_awaited_once()
     mock_indexer.reindex.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_caching_behavior(mocker):
+    # Reset caches
+    server._search_mapping_cache.clear()
+    server._mapping_rules_cache.clear()
+    
+    # Mock search
+    mock_engine = mocker.MagicMock()
+    mock_engine.search.return_value = [{"ric": "AAPL.O", "coa": "RREV"}]
+    mock_engine.get_rules.return_value = {"categories": {"1_identical": "Identical"}}
+    mocker.patch("lseg_mcp.server._get_mapping_async", return_value=mock_engine)
+    
+    # First call: should query engine
+    res1 = await server.search_financial_mapping("RREV")
+    mock_engine.search.assert_called_once_with("RREV", industry=None, statement=None, limit=25)
+    
+    # Second call: should hit cache
+    mock_engine.search.reset_mock()
+    res2 = await server.search_financial_mapping("RREV")
+    mock_engine.search.assert_not_called()
+    assert res1 == res2
+    
+    # rules first call
+    rules1 = await server.get_mapping_rules()
+    mock_engine.get_rules.assert_called_once()
+    
+    # rules second call: hits cache
+    mock_engine.get_rules.reset_mock()
+    rules2 = await server.get_mapping_rules()
+    mock_engine.get_rules.assert_not_called()
+    assert rules1 == rules2
+    
+    # Call rescan_packages: should clear caches
+    class MockRescan:
+        async def rescan(self, indexer, update_packages):
+            return {"status": "ok"}
+            
+    mocker.patch("lseg_mcp.server._get_rescan", return_value=MockRescan())
+    mocker.patch("lseg_mcp.server._get_indexer", return_value="dummy_indexer")
+    await server.rescan_packages()
+    
+    # Calling again should not hit cache (should call engine again)
+    mock_engine.search.reset_mock()
+    await server.search_financial_mapping("RREV")
+    mock_engine.search.assert_called_once_with("RREV", industry=None, statement=None, limit=25)

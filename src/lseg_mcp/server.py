@@ -71,6 +71,44 @@ logger.setLevel(logging.INFO)
 # ── Resolve paths ────────────────────────────────────────────────────
 _DEFAULT_XLSX = get_mapping_xlsx()
 _DEFAULT_R_REPO = get_r_repo_path()
+class AsyncTTLCache:
+    """A simple asynchronous TTL cache."""
+    def __init__(self, ttl_seconds: int):
+        self.ttl = ttl_seconds
+        self.cache = {}
+
+    async def get_or_set(self, key, coro_func, *args, **kwargs):
+        import time
+        now = time.time()
+        if key in self.cache:
+            val, expiry = self.cache[key]
+            if now < expiry:
+                return val
+            del self.cache[key]
+        
+        val = await coro_func(*args, **kwargs)
+        if not (isinstance(val, str) and val.startswith("**Error**")):
+            self.cache[key] = (val, now + self.ttl)
+        return val
+
+    def clear(self):
+        self.cache.clear()
+
+
+def _make_hashable(val: Any) -> Any:
+    """Convert unhashable types (like lists, dicts) into hashable ones recursively."""
+    if isinstance(val, list):
+        return tuple(_make_hashable(x) for x in val)
+    if isinstance(val, dict):
+        return tuple((k, _make_hashable(v)) for k, v in sorted(val.items()))
+    return val
+
+
+_search_mapping_cache = AsyncTTLCache(ttl_seconds=300)
+_mapping_rules_cache = AsyncTTLCache(ttl_seconds=1800)
+_package_signature_cache = AsyncTTLCache(ttl_seconds=300)
+_validate_formula_cache = AsyncTTLCache(ttl_seconds=300)
+
 
 # ── Singletons (initialised lazily on first tool call) ───────────────
 _mapping: MappingEngine | None = None
@@ -195,27 +233,32 @@ async def search_financial_mapping(
     """
     if not _startup_complete.is_set():
         return "⏳ **Status**: Server is downloading and indexing packages. Please wait 10 seconds and try again."  # pragma: no cover
-    try:
-        engine = await _get_mapping_async()
-        queries = query if isinstance(query, list) else [query]
-        all_results = {}
-        
-        for q in queries:
-            results = engine.search(q, industry=industry, statement=statement, limit=limit)
-            all_results[q] = results
+    
+    async def _impl():
+        try:
+            engine = await _get_mapping_async()
+            queries = query if isinstance(query, list) else [query]
+            all_results = {}
             
-        if isinstance(query, str):
-            if not all_results[query]:
-                return f"No mapping found for query '{query}'" + (
-                    f" in industry '{industry}'" if industry else ""
-                ) + "."
-            return json.dumps(all_results[query], indent=2, default=str)
-            
-        return json.dumps(all_results, indent=2, default=str)
-    except FileNotFoundError:
-        return "**Error**: Mapping Excel file not found. Set LSEG_MAPPING_PATH or place the file in data/LSEG_Mapping.xlsx."
-    except Exception as e:
-        return f"**Error**: {e}"
+            for q in queries:
+                results = engine.search(q, industry=industry, statement=statement, limit=limit)
+                all_results[q] = results
+                
+            if isinstance(query, str):
+                if not all_results[query]:
+                    return f"No mapping found for query '{query}'" + (
+                        f" in industry '{industry}'" if industry else ""
+                    ) + "."
+                return json.dumps(all_results[query], indent=2, default=str)
+                
+            return json.dumps(all_results, indent=2, default=str)
+        except FileNotFoundError:
+            return "**Error**: Mapping Excel file not found. Set LSEG_MAPPING_PATH or place the file in data/LSEG_Mapping.xlsx."
+        except Exception as e:
+            return f"**Error**: {e}"
+
+    cache_key = (_make_hashable(query), industry, statement, limit)
+    return await _search_mapping_cache.get_or_set(cache_key, _impl)
 
 
 @mcp.tool()
@@ -229,12 +272,16 @@ async def get_mapping_rules() -> str:
     """
     if not _startup_complete.is_set():
         return "⏳ **Status**: Server is downloading and indexing packages. Please wait 10 seconds and try again."  # pragma: no cover
-    try:
-        engine = await _get_mapping_async()
-        rules = engine.get_rules()
-        return json.dumps(rules, indent=2, default=str)
-    except Exception as e:
-        return f"**Error**: {e}"
+    
+    async def _impl():
+        try:
+            engine = await _get_mapping_async()
+            rules = engine.get_rules()
+            return json.dumps(rules, indent=2, default=str)
+        except Exception as e:
+            return f"**Error**: {e}"
+
+    return await _mapping_rules_cache.get_or_set("rules", _impl)
 
 
 @mcp.tool()
@@ -252,12 +299,17 @@ async def get_package_signature(language: str, function: str) -> str:
     """
     if not _startup_complete.is_set():
         return "⏳ **Status**: Server is downloading and indexing packages. Please wait 10 seconds and try again."  # pragma: no cover
-    try:
-        indexer = _get_indexer()
-        result = indexer.get_signature(language, function)
-        return json.dumps(result, indent=2, default=str)
-    except Exception as e:
-        return f"**Error**: {e}"
+    
+    async def _impl():
+        try:
+            indexer = _get_indexer()
+            result = indexer.get_signature(language, function)
+            return json.dumps(result, indent=2, default=str)
+        except Exception as e:
+            return f"**Error**: {e}"
+
+    cache_key = (language.lower(), function)
+    return await _package_signature_cache.get_or_set(cache_key, _impl)
 
 
 @mcp.tool()
@@ -284,12 +336,17 @@ async def validate_lseg_formula(
     """
     if not _startup_complete.is_set():
         return "⏳ **Status**: Server is downloading and indexing packages. Please wait 10 seconds and try again."  # pragma: no cover
-    try:
-        engine = await _get_mapping_async()
-        results = engine.validate_formula(fields, industry=industry)
-        return json.dumps(results, indent=2, default=str)
-    except Exception as e:
-        return f"**Error**: {e}"
+    
+    async def _impl():
+        try:
+            engine = await _get_mapping_async()
+            results = engine.validate_formula(fields, industry=industry)
+            return json.dumps(results, indent=2, default=str)
+        except Exception as e:
+            return f"**Error**: {e}"
+
+    cache_key = (_make_hashable(fields), industry)
+    return await _validate_formula_cache.get_or_set(cache_key, _impl)
 
 
 @mcp.tool()
@@ -376,8 +433,23 @@ async def rescan_packages(update_packages: bool = True, background: bool = False
         indexer = _get_indexer()
         rescan = _get_rescan()
         
+        # Clear caches proactively
+        _search_mapping_cache.clear()
+        _mapping_rules_cache.clear()
+        _package_signature_cache.clear()
+        _validate_formula_cache.clear()
+        
         if background:
-            asyncio.create_task(rescan.rescan(indexer, update_packages=update_packages))
+            async def run_in_bg():
+                try:
+                    await rescan.rescan(indexer, update_packages=update_packages)
+                finally:
+                    # Clear caches again upon completion
+                    _search_mapping_cache.clear()
+                    _mapping_rules_cache.clear()
+                    _package_signature_cache.clear()
+                    _validate_formula_cache.clear()
+            asyncio.create_task(run_in_bg())
             return json.dumps({
                 "status": "started", 
                 "message": "Rescan initiated in the background. Check logs for completion."
