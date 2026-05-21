@@ -110,6 +110,7 @@ class RescanManager:
             self.python_pip = [sys.executable, "-m", "pip"]
         else:
             self.python_pip = [python_pip] if isinstance(python_pip, str) else python_pip
+        self._rescan_lock = asyncio.Lock()
 
     async def update_r_package(self) -> dict[str, Any]:
         """Pull or clone the latest RefinitivR from Git."""
@@ -188,7 +189,21 @@ class RescanManager:
         2. Snapshot current function counts.
         3. Force re-index both packages.
         4. Return a diff summary.
+
+        Only one rescan may run at a time; concurrent calls return immediately
+        with ``status='skipped'``.
         """
+        if self._rescan_lock.locked():
+            return {"status": "skipped", "message": "A rescan is already in progress."}
+        async with self._rescan_lock:
+            return await self._rescan_impl(indexer, update_packages)
+
+    async def _rescan_impl(
+        self,
+        indexer: Any,
+        update_packages: bool = True,
+    ) -> dict[str, Any]:
+        """Internal rescan implementation, always called under ``_rescan_lock``."""
         report: dict[str, Any] = {}
 
         # Snapshot before

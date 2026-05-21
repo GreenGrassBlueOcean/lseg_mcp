@@ -16,7 +16,9 @@ import json
 import logging
 import os
 import sys
+import time
 import threading
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
@@ -72,33 +74,46 @@ logger.setLevel(logging.INFO)
 _DEFAULT_XLSX = get_mapping_xlsx()
 _DEFAULT_R_REPO = get_r_repo_path()
 class AsyncTTLCache:
-    """A simple asynchronous TTL cache."""
-    def __init__(self, name: str, ttl_seconds: int):
+    """Async TTL cache with LRU eviction and active expiry purge."""
+    def __init__(self, name: str, ttl_seconds: int, maxsize: int = 256):
         self.name = name
         self.ttl = ttl_seconds
-        self.cache = {}
+        self.maxsize = maxsize
+        self.cache: OrderedDict = OrderedDict()
 
     async def get_or_set(self, key, coro_func, *args, **kwargs):
-        import time
         now = time.time()
         if key in self.cache:
             val, expiry = self.cache[key]
             if now < expiry:
+                self.cache.move_to_end(key)
                 logger.debug("[CACHE HIT] %s (key: %s)", self.name, key)
                 return val
             logger.debug("[CACHE EXPIRED] %s (key: %s)", self.name, key)
             del self.cache[key]
         else:
             logger.debug("[CACHE MISS] %s (key: %s)", self.name, key)
-        
+
         start_time = time.time()
         val = await coro_func(*args, **kwargs)
         elapsed = (time.time() - start_time) * 1000.0
         logger.debug("[CACHE LOAD] %s resolved in %.1fms", self.name, elapsed)
-        
+
         if not (isinstance(val, str) and val.startswith("**Error**")):
+            # Evict LRU entry if at capacity
+            while len(self.cache) >= self.maxsize:
+                evicted_key, _ = self.cache.popitem(last=False)
+                logger.debug("[CACHE EVICT] %s (key: %s)", self.name, evicted_key)
             self.cache[key] = (val, now + self.ttl)
         return val
+
+    def purge_expired(self):
+        """Actively remove all expired entries."""
+        now = time.time()
+        expired = [k for k, (_, exp) in self.cache.items() if now >= exp]
+        for k in expired:
+            del self.cache[k]
+            logger.debug("[CACHE PURGE] %s (key: %s)", self.name, k)
 
     def clear(self):
         self.cache.clear()
@@ -124,14 +139,18 @@ _mapping: MappingEngine | None = None
 _indexer: PackageIndexer | None = None
 _rescan: RescanManager | None = None
 _startup_complete = threading.Event()
+_mapping_lock = asyncio.Lock()
 
 
 async def _get_mapping_async() -> MappingEngine:
     global _mapping
-    if _mapping is None:
-        _mapping = MappingEngine(str(_DEFAULT_XLSX))
-        # Offload the blocking CPU work to a background thread
-        await asyncio.to_thread(_mapping._load)
+    if _mapping is not None:          # fast path — no lock needed
+        return _mapping
+    async with _mapping_lock:         # serialise cold-start init
+        if _mapping is None:          # double-check after acquiring lock
+            engine = MappingEngine(str(_DEFAULT_XLSX))
+            await asyncio.to_thread(engine._load)
+            _mapping = engine         # only assign once fully loaded
     return _mapping
 
 
@@ -438,6 +457,18 @@ async def rescan_packages(update_packages: bool = True, background: bool = False
     """
     if not _startup_complete.is_set():
         return "⏳ **Status**: Server is downloading and indexing packages. Please wait 10 seconds and try again."  # pragma: no cover
+
+    # Guard: block pip/git mutations outside a virtual environment
+    if update_packages and os.environ.get("LSEG_ALLOW_ENV_MUTATION", "").strip() != "1":
+        if not (hasattr(sys, "prefix") and sys.prefix != sys.base_prefix):
+            return json.dumps({
+                "status": "blocked",
+                "message": (
+                    "update_packages=True is blocked outside a virtual environment. "
+                    "Set LSEG_ALLOW_ENV_MUTATION=1 to override, or run the server "
+                    "inside a venv/uvx."
+                ),
+            })
     try:
         indexer = _get_indexer()
         rescan = _get_rescan()

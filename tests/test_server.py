@@ -1,4 +1,5 @@
 import pytest
+import asyncio
 import json
 import os
 from lseg_mcp import server
@@ -12,6 +13,8 @@ def mock_environment(mocker, mock_pandas_read_excel):
     server._indexer = None
     server._rescan = None
     server._startup_complete.set()
+    # Reset the singleton lock to avoid leftover state between tests
+    server._mapping_lock = asyncio.Lock()
     
     # Reset caches for isolation
     server._search_mapping_cache.clear()
@@ -472,3 +475,154 @@ def test_flushing_file_handler_os_error(mocker, tmp_path):
     # This should not raise an error because of the try-except block
     handler.emit(record)
     handler.close()
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Audit Fix Tests
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@pytest.mark.asyncio
+async def test_mapping_lock_prevents_double_init(mocker, mock_pandas_read_excel):
+    """Two concurrent _get_mapping_async() calls only trigger _load() once."""
+    server._mapping = None
+    server._mapping_lock = asyncio.Lock()
+
+    load_count = 0
+    original_load = server.MappingEngine._load
+
+    def counting_load(self):
+        nonlocal load_count
+        load_count += 1
+        original_load(self)
+
+    mocker.patch.object(server.MappingEngine, "_load", counting_load)
+
+    results = await asyncio.gather(
+        server._get_mapping_async(),
+        server._get_mapping_async(),
+    )
+
+    assert load_count == 1, f"Expected _load() called once, got {load_count}"
+    assert results[0] is results[1], "Both calls must return the same singleton"
+
+
+@pytest.mark.asyncio
+async def test_rescan_lock_prevents_concurrent_runs():
+    """Second rescan() call returns 'skipped' while first is running."""
+    from lseg_mcp.rescan_manager import RescanManager
+
+    rescan = RescanManager(r_repo_path="dummy_path", python_pip="dummy_pip")
+
+    # Simulate a slow rescan by holding the lock
+    async with rescan._rescan_lock:
+        result = await rescan.rescan(indexer=None, update_packages=False)
+        assert result["status"] == "skipped"
+        assert "already in progress" in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_cache_maxsize_eviction():
+    """Cache evicts LRU entries when maxsize is exceeded."""
+    cache = server.AsyncTTLCache("test_evict", ttl_seconds=60, maxsize=3)
+    call_count = 0
+
+    async def mock_coro(val):
+        nonlocal call_count
+        call_count += 1
+        return val
+
+    await cache.get_or_set("a", mock_coro, "val_a")
+    await cache.get_or_set("b", mock_coro, "val_b")
+    await cache.get_or_set("c", mock_coro, "val_c")
+    assert len(cache.cache) == 3
+
+    # Insert a 4th item — should evict the LRU ("a")
+    await cache.get_or_set("d", mock_coro, "val_d")
+    assert len(cache.cache) == 3
+    assert "a" not in cache.cache
+    assert "d" in cache.cache
+
+    # Access "b" to refresh it, then insert "e" — should evict "c" (now LRU)
+    await cache.get_or_set("b", mock_coro, "val_b")  # cache hit
+    await cache.get_or_set("e", mock_coro, "val_e")
+    assert "c" not in cache.cache
+    assert "b" in cache.cache
+
+
+@pytest.mark.asyncio
+async def test_cache_purge_expired():
+    """purge_expired() removes stale keys proactively."""
+    import time
+    cache = server.AsyncTTLCache("test_purge", ttl_seconds=60, maxsize=256)
+
+    async def mock_coro():
+        return "value"
+
+    await cache.get_or_set("fresh", mock_coro)
+    await cache.get_or_set("stale1", mock_coro)
+    await cache.get_or_set("stale2", mock_coro)
+
+    # Manually expire two entries
+    cache.cache["stale1"] = ("value", time.time() - 10)
+    cache.cache["stale2"] = ("value", time.time() - 5)
+
+    assert len(cache.cache) == 3
+    cache.purge_expired()
+    assert len(cache.cache) == 1
+    assert "fresh" in cache.cache
+    assert "stale1" not in cache.cache
+    assert "stale2" not in cache.cache
+
+
+@pytest.mark.asyncio
+async def test_env_mutation_guard_blocks_global(mocker):
+    """update_packages=True blocked outside a venv without override."""
+    mocker.patch.dict(os.environ, {"LSEG_ALLOW_ENV_MUTATION": ""}, clear=False)
+    # Simulate running outside a venv: sys.prefix == sys.base_prefix
+    mocker.patch.object(server.sys, "prefix", "/usr/local")
+    mocker.patch.object(server.sys, "base_prefix", "/usr/local")
+
+    res = await server.rescan_packages(update_packages=True)
+    parsed = json.loads(res)
+    assert parsed["status"] == "blocked"
+    assert "virtual environment" in parsed["message"]
+
+
+@pytest.mark.asyncio
+async def test_env_mutation_guard_allows_venv(mocker):
+    """update_packages=True allowed inside a venv."""
+    mocker.patch.dict(os.environ, {"LSEG_ALLOW_ENV_MUTATION": ""}, clear=False)
+    # Simulate running inside a venv: sys.prefix != sys.base_prefix
+    mocker.patch.object(server.sys, "prefix", "/home/user/.venv")
+    mocker.patch.object(server.sys, "base_prefix", "/usr/local")
+
+    class MockRescan:
+        _rescan_lock = asyncio.Lock()
+        async def rescan(self, indexer, update_packages):
+            return {"status": "ok"}
+
+    mocker.patch("lseg_mcp.server._get_rescan", return_value=MockRescan())
+    mocker.patch("lseg_mcp.server._get_indexer", return_value="dummy_indexer")
+
+    res = await server.rescan_packages(update_packages=True)
+    assert "ok" in res
+
+
+@pytest.mark.asyncio
+async def test_env_mutation_guard_allows_override(mocker):
+    """LSEG_ALLOW_ENV_MUTATION=1 overrides the global-env block."""
+    mocker.patch.dict(os.environ, {"LSEG_ALLOW_ENV_MUTATION": "1"}, clear=False)
+    # Simulate running outside a venv
+    mocker.patch.object(server.sys, "prefix", "/usr/local")
+    mocker.patch.object(server.sys, "base_prefix", "/usr/local")
+
+    class MockRescan:
+        _rescan_lock = asyncio.Lock()
+        async def rescan(self, indexer, update_packages):
+            return {"status": "ok"}
+
+    mocker.patch("lseg_mcp.server._get_rescan", return_value=MockRescan())
+    mocker.patch("lseg_mcp.server._get_indexer", return_value="dummy_indexer")
+
+    res = await server.rescan_packages(update_packages=True)
+    assert "ok" in res
