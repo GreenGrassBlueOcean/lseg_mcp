@@ -38,9 +38,11 @@ The agent will autonomously use the `lseg-mcp` tools to:
 ## Features
 
 - **Semantic Mapping Engine**: Translates legacy Refinitiv COA codes to industry-specific modern LSEG FCC formulas automatically. Handles additive arrays, ASR bracket notation, and industry routing.
+- **Short-Lived Caching**: Uses an in-memory asynchronous TTL (Time-To-Live) cache to completely eliminate duplicate queries, optimizing response times and reducing external workspace API hits.
 - **Polyglot Code Generation**: Merges mapping-aware field resolution with live AST-verified function signatures to generate syntactically correct boilerplate in Python and R.
 - **AST-Driven Introspection**: Performs static analysis to read function signatures directly from the Python and R source code without executing unsafe scripts.
 - **Continuous Synchronization**: Automatically performs `git pull` and `pip install --upgrade` to ensure the MCP server is always synchronized with the underlying SDKs.
+
 ## Use Cases
 
 `lseg-mcp` is designed for quantitative researchers, data engineers, and AI agents who need reliable, scalable access to financial data:
@@ -138,6 +140,13 @@ Get-Content -Path "$env:LOCALAPPDATA\lseg-mcp\logs\startup.log" -Wait
 ```bash
 tail -f ~/.cache/lseg-mcp/logs/startup.log
 ```
+
+### Enabling Cache Debug Logs
+During development, you can inspect cache events (e.g., `[CACHE HIT] search_financial_mapping`, `[CACHE MISS]`, etc.) by setting the log level to `DEBUG` inside `src/lseg_mcp/server.py`:
+```python
+logger.setLevel(logging.DEBUG)
+```
+These logs will stream directly into the `startup.log` file.
 
 ## Testing
 
