@@ -140,6 +140,13 @@ async def test_draft_api_call_data_dictionary_fallback(mocker):
     assert "raw FCC code" not in res
 
 @pytest.mark.asyncio
+async def test_get_data_dict_async_singleton():
+    """Second call returns the cached singleton via the fast path."""
+    first = await server._get_data_dict_async()
+    second = await server._get_data_dict_async()
+    assert first is second
+
+@pytest.mark.asyncio
 async def test_search_data_dictionary():
     res = await server.search_data_dictionary("price close")
     assert "TR.PriceClose" in res

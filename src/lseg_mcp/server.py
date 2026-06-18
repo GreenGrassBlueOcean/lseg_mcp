@@ -448,7 +448,7 @@ async def search_data_dictionary(
         JSON list of matching fields with description, category, suggested parameters, and notes.
     """
     if not _startup_complete.is_set():
-        return "⏳ **Status**: Server is downloading and indexing packages. Please wait 10 seconds and try again."
+        return "⏳ **Status**: Server is downloading and indexing packages. Please wait 10 seconds and try again."  # pragma: no cover
 
     async def _impl():
         try:

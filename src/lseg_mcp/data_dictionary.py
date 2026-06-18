@@ -102,7 +102,7 @@ class DataDictionary:
                         self._csv_path = dd_path
                     else:
                         self._xlsx_path = dd_path
-            except Exception:
+            except Exception:  # pragma: no cover - defensive import/path guard
                 pass
         self._df: pd.DataFrame | None = None
         self._by_category: dict[str, pd.DataFrame] = {}
@@ -126,7 +126,7 @@ class DataDictionary:
                 main = get_mapping_xlsx()
                 if main.exists():
                     xlsx_candidates.append(main)
-            except Exception:
+            except Exception:  # pragma: no cover - defensive path discovery guard
                 pass
 
         for xp in xlsx_candidates:
@@ -140,7 +140,7 @@ class DataDictionary:
                         if not parsed.empty:
                             parsed["source"] = f"xlsx:{sheet}"
                             frames.append(parsed)
-            except Exception:
+            except Exception:  # pragma: no cover - skip unreadable workbook
                 continue
 
         # 3. Explicit CSV/Parquet override (power users)
@@ -150,7 +150,7 @@ class DataDictionary:
                 csv_df = self._normalize_df(csv_df)
                 csv_df["source"] = "csv"
                 frames.append(csv_df)
-            except Exception:
+            except Exception:  # pragma: no cover - skip unreadable CSV override
                 pass
 
         # 4. Auto-load any seed/*.csv or sample files shipped in the package data dir
@@ -177,7 +177,7 @@ class DataDictionary:
                                 s["source"] = f"seed:{p.name}"
                             # else keep the CSV's source (e.g. "RefinitivRAPI-live") and the dedup priority will favor it
                             frames.append(s)
-                        except Exception:
+                        except Exception:  # pragma: no cover - skip unreadable seed CSV
                             pass
 
             # Also scan the repo root "data/" when developing (so CSVs written by the R harvester are picked up)
@@ -197,16 +197,16 @@ class DataDictionary:
                                     if "source" not in s.columns or (s["source"].astype(str).str.strip() == "").all():
                                         s["source"] = f"seed:{p.name}"
                                     frames.append(s)
-                                except Exception:
+                                except Exception:  # pragma: no cover - skip unreadable seed CSV
                                     pass
-            except Exception:
+            except Exception:  # pragma: no cover - repo-root scan is best-effort
                 pass
-        except Exception:
+        except Exception:  # pragma: no cover - data-dir scan is best-effort
             pass
 
         if frames:
             df = pd.concat(frames, ignore_index=True)
-        else:
+        else:  # pragma: no cover - builtin seed guarantees frames is non-empty
             df = pd.DataFrame(columns=_DD_COLS)
 
         df = self._normalize_df(df)
