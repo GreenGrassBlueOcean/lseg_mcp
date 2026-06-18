@@ -30,9 +30,9 @@ lseg-mcp = "lseg_mcp.server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/lseg_mcp"]
-
-[tool.hatch.build.targets.wheel.force-include]
-"src/lseg_mcp/data" = "lseg_mcp/data"
+# Non-Python files under the package (data/*.xlsx, data/*.csv) are included
+# automatically by hatchling via `packages`; no force-include is needed and
+# adding one duplicates the data files in the wheel archive.
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

@@ -14,15 +14,18 @@ def mock_environment(mocker, mock_pandas_read_excel):
     server._mapping = None
     server._indexer = None
     server._rescan = None
+    server._data_dict = None
     server._startup_complete.set()
-    # Reset the singleton lock to avoid leftover state between tests
+    # Reset the singleton locks to avoid leftover state between tests
     server._mapping_lock = asyncio.Lock()
-    
+    server._data_dict_lock = asyncio.Lock()
+
     # Reset caches for isolation
     server._search_mapping_cache.clear()
     server._mapping_rules_cache.clear()
     server._package_signature_cache.clear()
     server._validate_formula_cache.clear()
+    server._data_dict_cache.clear()
 
 @pytest.mark.asyncio
 async def test_search_financial_mapping():
@@ -85,6 +88,20 @@ async def test_validate_lseg_formula():
     assert parsed[0]["status"] == "OK"
 
 @pytest.mark.asyncio
+async def test_validate_lseg_formula_data_dictionary_fallback():
+    """A field absent from the financials matrix but present in the extended
+    data dictionary (e.g. TR.PriceClose) should validate as OK via fallback,
+    while a genuinely unknown field stays NOT_FOUND."""
+    res = await server.validate_lseg_formula(["TR.PriceClose", "ZZZ_NOT_A_FIELD"])
+    parsed = json.loads(res)
+    by_field = {e["field"]: e for e in parsed}
+
+    assert by_field["TR.PriceClose"]["status"] == "OK"
+    assert by_field["TR.PriceClose"]["source"] == "data_dictionary"
+
+    assert by_field["ZZZ_NOT_A_FIELD"]["status"] == "NOT_FOUND"
+
+@pytest.mark.asyncio
 async def test_validate_lseg_formula_error(mocker):
     mocker.patch("lseg_mcp.server._get_mapping_async", side_effect=Exception("Generic error"))
     res = await server.validate_lseg_formula(["RREV"])
@@ -106,6 +123,49 @@ async def test_draft_api_call(mocker):
 async def test_draft_api_call_error(mocker):
     mocker.patch("lseg_mcp.server._get_mapping_async", side_effect=Exception("Generic error"))
     res = await server.draft_api_call("python", ["AAPL.O"], ["RREV"])
+    assert "**Error**: Generic error" in res
+
+@pytest.mark.asyncio
+async def test_draft_api_call_data_dictionary_fallback(mocker):
+    """A field absent from the matrix but present in the data dictionary
+    (TR.PriceClose) should be resolved via the dictionary fallback and appear
+    in the generated code rather than being dropped."""
+    class MockIndexer:
+        def get_signature(self, lang, func):
+            return {"name": func, "args": [], "doc": "mocked doc"}
+
+    mocker.patch("lseg_mcp.server._get_indexer", return_value=MockIndexer())
+    res = await server.draft_api_call("python", ["AAPL.O"], ["TR.PriceClose"])
+    assert "TR.PriceClose" in res
+    assert "raw FCC code" not in res
+
+@pytest.mark.asyncio
+async def test_get_data_dict_async_singleton():
+    """Second call returns the cached singleton via the fast path."""
+    first = await server._get_data_dict_async()
+    second = await server._get_data_dict_async()
+    assert first is second
+
+@pytest.mark.asyncio
+async def test_search_data_dictionary():
+    res = await server.search_data_dictionary("price close")
+    assert "TR.PriceClose" in res
+
+@pytest.mark.asyncio
+async def test_search_data_dictionary_list():
+    res = await server.search_data_dictionary(["price close", "esg score"])
+    assert "TR.PriceClose" in res
+    assert "TR.ESGScore" in res
+
+@pytest.mark.asyncio
+async def test_search_data_dictionary_no_match():
+    res = await server.search_data_dictionary("zzz_no_such_field", category="Pricing")
+    assert "No matches" in res
+
+@pytest.mark.asyncio
+async def test_search_data_dictionary_error(mocker):
+    mocker.patch("lseg_mcp.server._get_data_dict_async", side_effect=Exception("Generic error"))
+    res = await server.search_data_dictionary("price close")
     assert "**Error**: Generic error" in res
 
 @pytest.mark.asyncio

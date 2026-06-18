@@ -41,7 +41,9 @@ def _format_python_call(
         if note.get("_additive"):
             additive_fields.append(note)
         else:
-            val = note.get("office_field")
+            # Financials matrix rows carry 'office_field'; extended data
+            # dictionary hits carry the field name under 'field'.
+            val = note.get("office_field") or note.get("field")
             if val and str(val).strip() and str(val) != "nan":
                 simple_fields.append(str(val))
             else:
@@ -124,7 +126,9 @@ def _format_r_call(
         if note.get("_additive"):
             additive_fields.append(note)
         else:
-            val = note.get("office_field")
+            # Financials matrix rows carry 'office_field'; extended data
+            # dictionary hits carry the field name under 'field'.
+            val = note.get("office_field") or note.get("field")
             if val and str(val).strip() and str(val) != "nan":
                 simple_fields.append(str(val))
             else:

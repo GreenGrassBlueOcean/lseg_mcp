@@ -1,0 +1,12 @@
+field,description,category,parameters,notes
+TR.PriceClose,Closing price (daily),Pricing,"SDate, EDate, Frq, Curn, Adjusted",Core field for time series
+TR.Volume,Trading volume,Pricing,"SDate, EDate, Frq",Use with PriceClose for liquidity analysis
+TR.EPSMean,Mean consensus EPS estimate,Estimates,"SDate, Period, Broker",Use rd_GetEstimates for richer history + package tiers
+TR.RevenueMean,Mean consensus Revenue,Estimates,"SDate, Period",See rd_GetEstimates(view-summary/annual)
+TR.ESGScore,Overall ESG Score,ESG,"SDate, Period",Prefer rd_GetESG(view=scores-full) for pillars + controversies
+TR.CompanyMarketCap,Market capitalization,Reference,"Scale, Curn, ShType",Commonly Scale=6
+TR.PrimaryInstrument,Primary RIC for the entity,Reference,,Critical for many corporate action and share counts
+TR.PE,Price / Earnings ratio,Valuation,SDate,See examples in RefinitivR docs
+TR.RecommendationMean,Mean analyst recommendation (1=Strong Buy ... 5=Sell),Estimates,,Harvested via Screener export example
+TR.ESGControversies,Count or score of ESG controversies,ESG,,Example of user-added DIB field
+TR.OwnershipPct,Institutional ownership percentage,Ownership,"SDate, InvestorType",Demo of extending beyond core seeds

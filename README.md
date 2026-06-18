@@ -35,9 +35,22 @@ The agent will autonomously use the `lseg-mcp` tools to:
 2. It calls `get_package_signature` for the `lseg.data.get_data` Python function to verify default arguments.
 3. It calls `draft_api_call` to generate the runnable Python boilerplate, ensuring no deprecated variables are used.
 
+### Example 3: Extended Data Dictionary (Pricing / Estimates / ESG)
+
+**User Prompt:**
+> "Write R code using RefinitivR to fetch last 2 years of Price Close, consensus EPS (annual), and overall ESG score for AAPL.O and MSFT.O."
+
+**AI Agent Action:**
+1. Calls `search_data_dictionary("price close")` → gets `TR.PriceClose` + params.
+2. Calls `search_data_dictionary("eps mean")` + notes that `rd_GetEstimates(view="view-summary/annual", package="standard")` is often superior for full consensus.
+3. Calls `search_data_dictionary("esg score", category="ESG")` → surfaces `rd_GetESG` recommendation.
+4. `draft_api_call(language="r", ...)` produces clean code using the right surface (general `rd_GetData` for price + specialized for estimates/ESG where appropriate), with parameter examples pulled from the dictionary.
+
 ## Features
 
 - **Semantic Mapping Engine**: Translates legacy Refinitiv COA codes to industry-specific modern LSEG FCC formulas automatically. Handles additive arrays, ASR bracket notation, and industry routing.
+- **Extended Data Dictionary**: Fuzzy-searchable catalog of hundreds of real TR.* fields for Pricing, Estimates, ESG, Reference, Valuation, etc. (seeded from RefinitivR usage + curated). Complements the financials matrix. See `search_data_dictionary`.
+- **User-Extensible via DIB / Screener**: Drop "Custom_Fields", "Data Dictionary", or "DIB Export" sheets (or point `LSEG_DATA_DICTIONARY_PATH` at a CSV/Excel) — the LLM instantly sees your private or curated fields alongside the seeds. Includes ready-made harvesters in both R (`R/harvest_lseg_fields.R`) and Python (`scripts/harvest_lseg_fields.py` using pandas + openpyxl) for Screener "Export All as Formulas" and DIB exports.
 - **Short-Lived Caching**: Uses an in-memory asynchronous TTL (Time-To-Live) cache to completely eliminate duplicate queries, optimizing response times and reducing external workspace API hits (e.g., `[CACHE HIT] search_financial_mapping (key: AAPL.O Gross Profit) — 4.2ms`).
 - **Polyglot Code Generation**: Merges mapping-aware field resolution with live AST-verified function signatures to generate syntactically correct boilerplate in Python and R.
 - **AST-Driven Introspection**: Performs static analysis to read function signatures directly from the Python and R source code without executing unsafe scripts.
@@ -87,6 +100,79 @@ You can run the server directly via `uvx` without needing to clone the repositor
 
 *Note: While the package is pending official PyPI publication, you can install directly from GitHub using:*
 `"command": "uvx", "args": ["--from", "git+https://github.com/GreenGrassBlueOcean/lseg_mcp.git", "lseg-mcp"]`
+
+### Extending the Data Dictionary (Pricing, Estimates, ESG, ...)
+
+The MCP ships with a strong built-in seed (mined from RefinitivR examples + production patterns) for `TR.PriceClose`, `TR.EPSMean`, `TR.ESGScore`, market cap, etc.
+
+**Fastest way to add your own / more fields (Path 1):**
+
+1. In LSEG Workspace Excel, use **Data Item Browser (DIB)** or **Screener → Export All as Formulas**.
+2. Create (or append to) a sheet in your `LSEG_Mapping.xlsx` named `Custom_Fields` (or `Data Dictionary`, `DIB Export`, `Extended`).
+3. Columns (any order, case-insensitive): `Field`, `Description`, `Category` (Pricing/Estimates/ESG/...), `Parameters`, `Notes`.
+4. Or point an env var at a standalone file:
+   ```powershell
+   $env:LSEG_DATA_DICTIONARY_PATH = "C:\path\to\my_dib_export.csv"
+   ```
+   (CSV or .xlsx supported; see `data/sample_extended_fields.csv` for the exact flat format.)
+
+5. Restart the MCP client or call `rescan_packages`. The new fields are immediately searchable via `search_data_dictionary` and used in `draft_api_call`.
+
+**R helper for harvesting (recommended when you live in R/RefinitivR):**
+
+```r
+source("R/harvest_lseg_fields.R")          # from the repo, or copy the file
+export_starter_packs(".")
+# Then enrich with your DIB/Screener exports and write_for_lseg_mcp(...)
+```
+
+See `R/harvest_lseg_fields.R` and the "Example 3" above.
+
+**R harvester using RefinitivRAPI (the one with `rd_handshake()`) – for direct RDP / bearer token connections:**
+
+The RefinitivRAPI source lives at `Documents\code\R\RefinitivRAPI`.
+
+After you run `RefinitivRAPI::rd_handshake()` in your R session (the one that gave you the bearer token), source the harvester:
+
+```r
+source("C:/Users/laurensvdb/Documents/GitHub/lseg_mcp/scripts/harvest_real_fields_via_refinitivrapi.R")
+```
+
+It will:
+- Force-load from your `Documents\code\R\RefinitivRAPI` dev folder
+- Use the live connection/token from the handshake
+- Call the real `rd_Get*` functions (using the correct `Eikonformulas` param for rd_GetData)
+- Write CSVs into `lseg_mcp/data/`
+
+**Important**: The script now prints the *actual error messages* from failed calls and includes a "smoke test". Re-source and run it again after the handshake. The previous run failed on param name (`fields` vs `Eikonformulas` — now fixed to match your working manual call). Estimates/ESG may still 500 depending on your token scope / API implementation.
+
+**Python harvester (pandas + openpyxl) – great when you prefer Python or work in notebooks:**
+
+```bash
+# From a Screener "Export All as Formulas" file
+python scripts/harvest_lseg_fields.py -i my_screener.xlsx -c Estimates -o my_new_fields.csv
+
+# From a DIB sheet
+python scripts/harvest_lseg_fields.py -i dib_export.xlsx -s "My Fields" -c "Pricing" -o pricing.csv
+```
+
+The script:
+- Scans every cell (including formula text) for `TR.*` items
+- Handles both classic DIB tables and the rich Screener formula format
+- Splits out parameters (e.g. `TR.EPSMean(SDate=0CY)` → field=`TR.EPSMean`, parameters=`SDate=0CY`)
+- Writes the exact 5-column CSV the MCP expects
+
+You can also import it from notebooks:
+
+```python
+from scripts.harvest_lseg_fields import parse_excel_for_tr_fields, build_field_catalog, write_for_lseg_mcp
+
+fields = parse_excel_for_tr_fields("screener_export.xlsx")
+cat = build_field_catalog(fields, category="ESG")
+write_for_lseg_mcp(cat, "esg_harvested.csv")
+```
+
+See `scripts/harvest_lseg_fields.py` for the full CLI and more examples.
 
 ### Development Installation
 
