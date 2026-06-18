@@ -71,15 +71,16 @@ The FastMCP JSON-RPC communication layer operating over stdio.
 
 ## 3. MCP Tools & Resources
 
-### 3.1 Tools (6)
+### 3.1 Tools (7)
 
 | Tool | Description |
 |------|-------------|
 | `search_financial_mapping` | Fuzzy-searches the mapping matrix by query, industry, and statement. Returns legacy COA codes, exact target FCCs, polarity, and enrichment notes (additive formulas, ASR flags, No FCC Match). |
+| `search_data_dictionary` | Fuzzy-searches the extended TR. data dictionary (Pricing, Estimates, ESG, Reference, Valuation...). Seeded from RefinitivR + user-extensible via DIB/Screener exports or `LSEG_DATA_DICTIONARY_PATH`. Surfaces recommendations for specialized functions (`rd_GetEstimates`, `rd_GetESG`). |
 | `get_mapping_rules` | Retrieves overarching mapping definitions: 3 comparability categories (Identical / Comparable / Not Comparable), special-case rules, and cash-flow / balance-sheet format notes. |
 | `get_package_signature` | Fetches the live, exact usage signature and docstring for a function in `python` or `r` from the AST index. |
 | `validate_lseg_formula` | Cross-references drafted FCC/COA fields against the matrix. Returns per-field status (`OK`, `NOT_FOUND`, `NOT_COMPARABLE`) with actionable warnings for Primary Instrument, ASR, and additive formula requirements. |
-| `draft_api_call` | Merges mapping rules and AST signatures to return syntactically correct, ready-to-run code boilerplate in Python or R. |
+| `draft_api_call` | Merges mapping rules + data dictionary hits and AST signatures to return syntactically correct, ready-to-run code boilerplate in Python or R. Gracefully falls back to extended dictionary for non-financials fields. |
 | `rescan_packages` | Triggers an update check (`git pull` / `pip install --upgrade`), flushing caches and rebuilding the index. Returns a diff summary. |
 
 ### 3.2 Resources (3)

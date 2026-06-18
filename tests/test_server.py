@@ -14,15 +14,18 @@ def mock_environment(mocker, mock_pandas_read_excel):
     server._mapping = None
     server._indexer = None
     server._rescan = None
+    server._data_dict = None
     server._startup_complete.set()
-    # Reset the singleton lock to avoid leftover state between tests
+    # Reset the singleton locks to avoid leftover state between tests
     server._mapping_lock = asyncio.Lock()
-    
+    server._data_dict_lock = asyncio.Lock()
+
     # Reset caches for isolation
     server._search_mapping_cache.clear()
     server._mapping_rules_cache.clear()
     server._package_signature_cache.clear()
     server._validate_formula_cache.clear()
+    server._data_dict_cache.clear()
 
 @pytest.mark.asyncio
 async def test_search_financial_mapping():
@@ -83,6 +86,20 @@ async def test_validate_lseg_formula():
     res = await server.validate_lseg_formula(["RREV"])
     parsed = json.loads(res)
     assert parsed[0]["status"] == "OK"
+
+@pytest.mark.asyncio
+async def test_validate_lseg_formula_data_dictionary_fallback():
+    """A field absent from the financials matrix but present in the extended
+    data dictionary (e.g. TR.PriceClose) should validate as OK via fallback,
+    while a genuinely unknown field stays NOT_FOUND."""
+    res = await server.validate_lseg_formula(["TR.PriceClose", "ZZZ_NOT_A_FIELD"])
+    parsed = json.loads(res)
+    by_field = {e["field"]: e for e in parsed}
+
+    assert by_field["TR.PriceClose"]["status"] == "OK"
+    assert by_field["TR.PriceClose"]["source"] == "data_dictionary"
+
+    assert by_field["ZZZ_NOT_A_FIELD"]["status"] == "NOT_FOUND"
 
 @pytest.mark.asyncio
 async def test_validate_lseg_formula_error(mocker):

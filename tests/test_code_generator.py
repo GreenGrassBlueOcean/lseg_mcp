@@ -166,6 +166,55 @@ def test_draft_api_call_python_parameters_empty():
     # but wait, `if parameters:` is false for `{}`! So it should NOT output parameters.
     assert "parameters=" not in res
 
+def test_draft_api_call_python_data_dictionary_field():
+    """Extended data-dictionary hits (keyed by 'field') must appear in fields,
+    not be dropped as 'unknown' raw FCC codes."""
+    res = draft_api_call(
+        language="python",
+        tickers=["AAPL.O"],
+        fields=["TR.PriceClose"],
+        mapping_notes=[{
+            "field": "TR.PriceClose",
+            "category": "Pricing",
+            "_source": "data_dictionary",
+        }],
+    )
+    assert "fields=['TR.PriceClose']" in res
+    assert "raw FCC code" not in res
+
+
+def test_draft_api_call_r_data_dictionary_field():
+    """Same as above for the R generator."""
+    res = draft_api_call(
+        language="r",
+        tickers=["AAPL.O"],
+        fields=["TR.PriceClose"],
+        mapping_notes=[{
+            "field": "TR.PriceClose",
+            "category": "Pricing",
+            "_source": "data_dictionary",
+        }],
+    )
+    assert 'fields <- c("TR.PriceClose")' in res
+    assert "raw FCC code" not in res
+
+
+def test_draft_api_call_mixed_matrix_and_dictionary_fields():
+    """A financials matrix field and a data-dictionary field together: both
+    must survive into the generated fields list."""
+    res = draft_api_call(
+        language="r",
+        tickers=["AAPL.O"],
+        fields=["Gross Profit", "TR.PriceClose"],
+        mapping_notes=[
+            {"office_field": "TR.GrossProfit", "_target_fcc": "SGRP", "coa": "SGRP"},
+            {"field": "TR.PriceClose", "category": "Pricing", "_source": "data_dictionary"},
+        ],
+    )
+    assert "TR.GrossProfit" in res
+    assert "TR.PriceClose" in res
+
+
 def test_draft_api_call_r_parameters_mixed_types():
     """Verify parameters with numbers, booleans, and strings format correctly in R."""
     res = draft_api_call(

@@ -27,6 +27,7 @@ from mcp.server.fastmcp import FastMCP
 from lseg_mcp.mapping_engine import MappingEngine
 from lseg_mcp.package_indexer import PackageIndexer
 from lseg_mcp.rescan_manager import RescanManager
+from lseg_mcp.data_dictionary import DataDictionary
 from lseg_mcp import code_generator
 
 # ── OS-level fd redirection to protect JSON-RPC on stdio ─────────────
@@ -132,14 +133,17 @@ _search_mapping_cache = AsyncTTLCache("search_financial_mapping", ttl_seconds=30
 _mapping_rules_cache = AsyncTTLCache("get_mapping_rules", ttl_seconds=1800)
 _package_signature_cache = AsyncTTLCache("get_package_signature", ttl_seconds=300)
 _validate_formula_cache = AsyncTTLCache("validate_lseg_formula", ttl_seconds=300)
+_data_dict_cache = AsyncTTLCache("search_data_dictionary", ttl_seconds=300)
 
 
 # ── Singletons (initialised lazily on first tool call) ───────────────
 _mapping: MappingEngine | None = None
 _indexer: PackageIndexer | None = None
 _rescan: RescanManager | None = None
+_data_dict: DataDictionary | None = None
 _startup_complete = threading.Event()
 _mapping_lock = asyncio.Lock()
+_data_dict_lock = asyncio.Lock()
 
 
 async def _get_mapping_async() -> MappingEngine:
@@ -152,6 +156,18 @@ async def _get_mapping_async() -> MappingEngine:
             await asyncio.to_thread(engine._load)
             _mapping = engine         # only assign once fully loaded
     return _mapping
+
+
+async def _get_data_dict_async() -> DataDictionary:
+    global _data_dict
+    if _data_dict is not None:
+        return _data_dict
+    async with _data_dict_lock:
+        if _data_dict is None:
+            dd = DataDictionary()  # will auto-discover main xlsx for Custom_Fields etc.
+            await asyncio.to_thread(dd._load)
+            _data_dict = dd
+    return _data_dict
 
 
 def _get_indexer() -> PackageIndexer:
@@ -355,6 +371,11 @@ async def validate_lseg_formula(
     - ASR layer requirements
     - Additive formula requirements
 
+    Fields that are not in the financials COA/FCC matrix but exist in the
+    extended data dictionary (Pricing / Estimates / ESG / Reference, e.g.
+    TR.PriceClose) are reported as OK with source="data_dictionary" rather
+    than NOT_FOUND, keeping this tool consistent with search_data_dictionary.
+
     Args:
         fields: List of FCC or COA codes to validate.
         industry: Optional industry context for validation.
@@ -369,12 +390,85 @@ async def validate_lseg_formula(
         try:
             engine = await _get_mapping_async()
             results = engine.validate_formula(fields, industry=industry)
+
+            # Fields absent from the financials COA/FCC matrix may still be
+            # valid extended dictionary items (Pricing / Estimates / ESG / ...).
+            # Fall back to the data dictionary before declaring NOT_FOUND so the
+            # tool stays consistent with search_data_dictionary.
+            dd = await _get_data_dict_async()
+            for entry in results:
+                if entry.get("status") != "NOT_FOUND":
+                    continue
+                field_name = entry["field"]
+                hits = dd.search(field_name, limit=1)
+                if hits:
+                    entry.clear()
+                    entry.update({
+                        "field": field_name,
+                        "status": "OK",
+                        "source": "data_dictionary",
+                        "warnings": [],
+                        "note": "Valid extended dictionary field (not in the financials COA/FCC matrix).",
+                        "mapping": hits[0],
+                    })
+
             return json.dumps(results, indent=2, default=str)
         except Exception as e:
             return f"**Error**: {e}"
 
     cache_key = (_make_hashable(fields), industry)
     return await _validate_formula_cache.get_or_set(cache_key, _impl)
+
+
+@mcp.tool()
+async def search_data_dictionary(
+    query: str | list[str],
+    category: str | None = None,
+    limit: int = 30,
+) -> str:
+    """
+    Fuzzy-search the extended LSEG Data Dictionary (Pricing, Estimates, ESG,
+    Reference, Valuation, Fundamentals, etc.).
+
+    This complements search_financial_mapping. Use it for TR.* fields that are
+    not part of the standardized financials COA/FCC matrix (e.g. TR.PriceClose,
+    TR.EPSMean, TR.ESGScore, TR.CompanyMarketCap, analyst targets, etc.).
+
+    The dictionary is seeded from RefinitivR usage examples + curated production
+    fields and can be extended by the user via:
+      - A "Custom_Fields", "Data Dictionary", or "DIB Export" sheet in LSEG_Mapping.xlsx
+      - A dedicated Excel/CSV pointed to by LSEG_DATA_DICTIONARY_PATH
+
+    Args:
+        query: Search term or list of terms (field name, description keyword, e.g. "price close", "eps mean", "esg").
+        category: Optional filter e.g. "Pricing", "Estimates", "ESG", "Reference".
+        limit: Max results.
+
+    Returns:
+        JSON list of matching fields with description, category, suggested parameters, and notes.
+    """
+    if not _startup_complete.is_set():
+        return "⏳ **Status**: Server is downloading and indexing packages. Please wait 10 seconds and try again."
+
+    async def _impl():
+        try:
+            dd = await _get_data_dict_async()
+            queries = query if isinstance(query, list) else [query]
+            out: dict[str, Any] = {}
+            for q in queries:
+                hits = dd.search(q, category=category, limit=limit)
+                out[q] = hits
+            if isinstance(query, str):
+                if not out.get(query):
+                    cats = ", ".join(dd.list_categories()[:8])
+                    return f"No matches for '{query}'" + (f" in category '{category}'." if category else ".") + f" Available categories include: {cats}."
+                return json.dumps(out[query], indent=2, default=str)
+            return json.dumps(out, indent=2, default=str)
+        except Exception as e:
+            return f"**Error**: {e}"
+
+    cache_key = (_make_hashable(query), category, limit)
+    return await _data_dict_cache.get_or_set(cache_key, _impl)
 
 
 @mcp.tool()
@@ -408,16 +502,39 @@ async def draft_api_call(
     try:
         engine = await _get_mapping_async()
         indexer = _get_indexer()
+        dd = await _get_data_dict_async()
 
-        # Resolve each field through the mapping engine
+        # Resolve each field through the mapping engine (financials) + data dict fallback
         mapping_notes: list[dict[str, Any]] = []
         for field in fields:
             matches = engine.search(field, industry=industry, limit=1)
             if matches:
                 mapping_notes.append(matches[0])
+            else:
+                # Fallback to extended dictionary (Pricing / Estimates / ESG / etc.)
+                dhit = dd.search(field, limit=1)
+                if dhit:
+                    note = dhit[0]
+                    note["_source"] = "data_dictionary"
+                    # Inject a helpful note for the generator, but only when we
+                    # actually have descriptive content (avoids empty noise like
+                    # "Extended dict hit (General): . Parameters example: ").
+                    desc = str(note.get("description", "")).strip()
+                    params = str(note.get("parameters", "")).strip()
+                    if note.get("category") and (desc or params):
+                        bits = [f"Extended dict hit ({note['category']})"]
+                        if desc:
+                            bits.append(f": {desc}")
+                        if params:
+                            bits.append(f". Parameters example: {params}")
+                        note.setdefault("_notes", []).append("".join(bits))
+                    mapping_notes.append(note)
 
-        # Get the appropriate function signature
+        # Get the appropriate function signature (prefer specialized for certain categories)
         func_name = "get_data" if language.lower() == "python" else "rd_GetData"
+        # Simple heuristic: if any note points at Estimates/ESG, the caller can still choose
+        # rd_GetEstimates etc.; we keep the generic signature here and let search_data_dictionary
+        # surface the recommendation.
         sig = indexer.get_signature(language, func_name)
         if "error" in sig:
             sig = None
@@ -478,6 +595,7 @@ async def rescan_packages(update_packages: bool = True, background: bool = False
         _mapping_rules_cache.clear()
         _package_signature_cache.clear()
         _validate_formula_cache.clear()
+        _data_dict_cache.clear()
         
         if background:
             async def run_in_bg():
@@ -489,6 +607,7 @@ async def rescan_packages(update_packages: bool = True, background: bool = False
                     _mapping_rules_cache.clear()
                     _package_signature_cache.clear()
                     _validate_formula_cache.clear()
+                    _data_dict_cache.clear()
             asyncio.create_task(run_in_bg())
             return json.dumps({
                 "status": "started", 

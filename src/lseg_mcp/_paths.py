@@ -85,3 +85,19 @@ def get_log_dir() -> Path:
     log_dir = get_cache_dir() / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     return log_dir
+
+
+def get_data_dictionary_path() -> Path | None:
+    """
+    Optional override path for an extended Data Dictionary Excel/CSV.
+
+    Set LSEG_DATA_DICTIONARY_PATH to point at a .xlsx or .csv containing
+    Custom_Fields / DIB exports (columns: Field, Description, Category, Parameters, Notes).
+    If unset, the DataDictionary will still scan the main LSEG_Mapping.xlsx for
+    sheets named *Custom*, *Data Dictionary*, *DIB*, *Extended*, etc.
+    """
+    env = os.environ.get("LSEG_DATA_DICTIONARY_PATH")
+    if env:
+        p = Path(env)
+        return p if p.exists() else p  # return even if missing; loader will handle
+    return None
