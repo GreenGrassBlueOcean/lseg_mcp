@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pytest
 from lseg_mcp._paths import (
     get_cache_dir,
+    get_data_dictionary_path,
     get_data_dir,
     get_log_dir,
     get_mapping_xlsx,
@@ -85,3 +86,17 @@ def test_get_log_dir():
     result = get_log_dir()
     assert result.name == "logs"
     assert result.exists()
+
+
+def test_get_data_dictionary_path_unset(monkeypatch):
+    """With no env var set, the data dictionary path is None."""
+    monkeypatch.delenv("LSEG_DATA_DICTIONARY_PATH", raising=False)
+    assert get_data_dictionary_path() is None
+
+
+def test_get_data_dictionary_path_env_override(monkeypatch, tmp_path):
+    """LSEG_DATA_DICTIONARY_PATH env var should be returned as a Path."""
+    fake = tmp_path / "my_dict.csv"
+    fake.touch()
+    monkeypatch.setenv("LSEG_DATA_DICTIONARY_PATH", str(fake))
+    assert get_data_dictionary_path() == fake

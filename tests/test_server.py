@@ -126,6 +126,42 @@ async def test_draft_api_call_error(mocker):
     assert "**Error**: Generic error" in res
 
 @pytest.mark.asyncio
+async def test_draft_api_call_data_dictionary_fallback(mocker):
+    """A field absent from the matrix but present in the data dictionary
+    (TR.PriceClose) should be resolved via the dictionary fallback and appear
+    in the generated code rather than being dropped."""
+    class MockIndexer:
+        def get_signature(self, lang, func):
+            return {"name": func, "args": [], "doc": "mocked doc"}
+
+    mocker.patch("lseg_mcp.server._get_indexer", return_value=MockIndexer())
+    res = await server.draft_api_call("python", ["AAPL.O"], ["TR.PriceClose"])
+    assert "TR.PriceClose" in res
+    assert "raw FCC code" not in res
+
+@pytest.mark.asyncio
+async def test_search_data_dictionary():
+    res = await server.search_data_dictionary("price close")
+    assert "TR.PriceClose" in res
+
+@pytest.mark.asyncio
+async def test_search_data_dictionary_list():
+    res = await server.search_data_dictionary(["price close", "esg score"])
+    assert "TR.PriceClose" in res
+    assert "TR.ESGScore" in res
+
+@pytest.mark.asyncio
+async def test_search_data_dictionary_no_match():
+    res = await server.search_data_dictionary("zzz_no_such_field", category="Pricing")
+    assert "No matches" in res
+
+@pytest.mark.asyncio
+async def test_search_data_dictionary_error(mocker):
+    mocker.patch("lseg_mcp.server._get_data_dict_async", side_effect=Exception("Generic error"))
+    res = await server.search_data_dictionary("price close")
+    assert "**Error**: Generic error" in res
+
+@pytest.mark.asyncio
 async def test_rescan_packages(mocker):
     class MockRescan:
         async def rescan(self, indexer, update_packages):

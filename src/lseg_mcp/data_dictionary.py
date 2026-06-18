@@ -273,6 +273,10 @@ class DataDictionary:
         return self._normalize_df(data)
 
     def _normalize_df(self, df: pd.DataFrame) -> pd.DataFrame:
+        # Case-insensitive column matching: a user CSV / DIB export may use
+        # "Field", "Description", etc. (the README promises case-insensitive
+        # columns). Lower-case incoming column names before mapping to _DD_COLS.
+        df = df.rename(columns={c: str(c).strip().lower() for c in df.columns})
         out = pd.DataFrame()
         for col in _DD_COLS:
             if col in df.columns:
@@ -331,15 +335,16 @@ class DataDictionary:
                 result["category"].str.lower().str.contains(cat_lower, regex=False, na=False)
             ]
 
-        result = result.head(limit)
-
         records = []
         for _, row in result.iterrows():
             rec = {k: ("" if pd.isna(v) else str(v)) for k, v in row.items()}
             rec["_match_score"] = self._score(rec, q)
             records.append(rec)
-        # Sort by score desc then field
+        # Sort by score desc then field, THEN truncate — applying the limit
+        # before sorting would return arbitrary dataframe-order rows and drop
+        # the best matches (e.g. an exact field hit) when limit is small.
         records.sort(key=lambda r: (-r.get("_match_score", 0), r.get("field", "")))
+        records = records[:limit]
         for r in records:
             r.pop("_match_score", None)
         return records
