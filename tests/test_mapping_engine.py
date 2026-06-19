@@ -394,3 +394,40 @@ def test_validate_formula_ok_field_same_industry(mock_pandas_read_excel):
     assert results[0]["status"] == "OK"
 
 
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  _match_type metadata
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+def test_search_substring_match_type(mock_pandas_read_excel):
+    """Exact substring match results should carry _match_type='substring'."""
+    engine = MappingEngine(xlsx_path="dummy.xlsx")
+    res = engine.search("RREV")
+    assert len(res) == 1
+    assert res[0]["_match_type"] == "substring"
+
+
+def test_search_fuzzy_match_type(mock_pandas_read_excel):
+    """Fuzzy fallback results should carry _match_type='fuzzy'."""
+    engine = MappingEngine(xlsx_path="dummy.xlsx")
+    # 'Groos Reveneu' doesn't substring-match; it goes through fuzzy
+    res = engine.search("Groos Reveneu")
+    assert len(res) >= 1
+    assert res[0]["_match_type"] == "fuzzy"
+
+
+def test_search_no_match_returns_empty(mock_pandas_read_excel):
+    """Completely unrelated query should return empty (no match of any type)."""
+    engine = MappingEngine(xlsx_path="dummy.xlsx")
+    res = engine.search("xyzzy_gibberish_12345")
+    assert len(res) == 0
+
+
+def test_match_type_is_consistent_across_results(mock_pandas_read_excel):
+    """All results from one search call should have the same _match_type."""
+    engine = MappingEngine(xlsx_path="dummy.xlsx")
+    # 'Debt' substring-matches both RDEBT and RDEBT_BANK
+    res = engine.search("Debt")
+    assert len(res) >= 2
+    types = {r["_match_type"] for r in res}
+    assert len(types) == 1
+    assert "substring" in types

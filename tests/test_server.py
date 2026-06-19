@@ -849,3 +849,93 @@ async def test_draft_api_call_unresolved_multiple_tickers(mocker):
     assert "JPM" in res
 
 
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Quality fixes: fuzzy match → data dictionary priority
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@pytest.mark.asyncio
+async def test_validate_lseg_formula_fuzzy_match_overridden_by_dd():
+    """TR.PriceClose should validate as source='data_dictionary' even when
+    the financials engine returns a fuzzy (garbage) match for it."""
+    res = await server.validate_lseg_formula(["TR.PriceClose"])
+    parsed = json.loads(res)
+    by_field = {e["field"]: e for e in parsed}
+
+    assert by_field["TR.PriceClose"]["status"] == "OK"
+    assert by_field["TR.PriceClose"]["source"] == "data_dictionary"
+
+
+@pytest.mark.asyncio
+async def test_validate_lseg_formula_fuzzy_override_preserves_ok_substring():
+    """A valid COA like RREV must still validate as OK from the financials
+    matrix (substring match), NOT be overridden by the data dictionary."""
+    res = await server.validate_lseg_formula(["RREV"])
+    parsed = json.loads(res)
+    assert parsed[0]["status"] == "OK"
+    # Should NOT have source=data_dictionary
+    assert parsed[0].get("source") != "data_dictionary"
+
+
+@pytest.mark.asyncio
+async def test_draft_api_call_price_close_resolves_correctly(mocker):
+    """'Price Close' must resolve to TR.PriceClose, not TR.PolicyLoans."""
+    class MockIndexer:
+        def get_signature(self, lang, func):
+            return {"name": func, "args": [], "doc": "mocked doc"}
+
+    mocker.patch("lseg_mcp.server._get_indexer", return_value=MockIndexer())
+    res = await server.draft_api_call("python", ["AAPL.O"], ["Price Close"])
+    assert "TR.PriceClose" in res
+    assert "PolicyLoans" not in res
+
+
+@pytest.mark.asyncio
+async def test_draft_api_call_market_cap_resolves_correctly(mocker):
+    """'Market Cap' must resolve to TR.CompanyMarketCap or similar, not garbage."""
+    class MockIndexer:
+        def get_signature(self, lang, func):
+            return {"name": func, "args": [], "doc": "mocked doc"}
+
+    mocker.patch("lseg_mcp.server._get_indexer", return_value=MockIndexer())
+    res = await server.draft_api_call("python", ["AAPL.O"], ["Market Cap"])
+    # Should contain a market-cap field from the data dictionary
+    res_lower = res.lower()
+    assert "marketcap" in res_lower or "market" in res_lower
+    assert "CreditCardFees" not in res
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  _pick_best_resolution unit tests
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+def test_pick_best_resolution_prefers_substring_financials():
+    """Case 1: substring financials match always wins."""
+    fin = [{"office_field": "TR.Revenue", "_match_type": "substring", "coa": "SREV"}]
+    dd = [{"field": "TR.Revenue", "category": "Fundamentals"}]
+    result = server._pick_best_resolution("Revenue", fin, dd)
+    assert result["office_field"] == "TR.Revenue"
+    assert result["_match_type"] == "substring"
+
+
+def test_pick_best_resolution_prefers_dd_over_fuzzy():
+    """Case 2: data dictionary hit beats a fuzzy financials match."""
+    fin = [{"office_field": "TR.PolicyLoans", "_match_type": "fuzzy", "coa": "IPOL"}]
+    dd = [{"field": "TR.PriceClose", "category": "Pricing", "description": "Close price"}]
+    result = server._pick_best_resolution("Price Close", fin, dd)
+    assert result["field"] == "TR.PriceClose"
+    assert result["_source"] == "data_dictionary"
+
+
+def test_pick_best_resolution_falls_back_to_fuzzy():
+    """Case 3: when dd has nothing, fuzzy financials match is used."""
+    fin = [{"office_field": "TR.SomeFuzzy", "_match_type": "fuzzy", "coa": "SFUZ"}]
+    dd = []
+    result = server._pick_best_resolution("SomeThing", fin, dd)
+    assert result["office_field"] == "TR.SomeFuzzy"
+
+
+def test_pick_best_resolution_unresolved():
+    """Case 4: both empty → unresolved with warning."""
+    result = server._pick_best_resolution("TR.Bogus", [], [])
+    assert result["_unresolved"] is True
+    assert "WARNING" in result["_notes"][0]

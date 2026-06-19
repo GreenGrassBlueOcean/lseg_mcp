@@ -179,7 +179,16 @@ class MappingEngine:
         -------
         list[dict]
             Each dict contains all mapping fields plus enrichment
-            metadata (``_notes``, ``_asr_flagged``, ``_additive``).
+            metadata (``_notes``, ``_asr_flagged``, ``_additive``,
+            ``_match_type``).
+
+            ``_match_type`` is one of:
+
+            - ``"substring"`` — the query appeared as a substring in one
+              of the text columns (high confidence).
+            - ``"fuzzy"`` — no substring hit was found; the result came
+              from ``difflib.get_close_matches`` (low confidence, may be
+              noise for queries outside the financials domain).
         """
         df = self.df
         q = query.lower()
@@ -194,8 +203,10 @@ class MappingEngine:
         result = df[mask].copy()
 
         # ── Fuzzy fallback when exact/substring matching returns nothing ──
+        match_type = "substring"
         if result.empty:
             result = self._fuzzy_fallback(query, limit=limit)
+            match_type = "fuzzy"
 
         # Optional filters
         if statement:
@@ -223,6 +234,7 @@ class MappingEngine:
         for _, row in result.iterrows():
             rec = row.dropna().to_dict()
             rec = self._enrich(rec, industry)
+            rec["_match_type"] = match_type
             records.append(rec)
 
         return records

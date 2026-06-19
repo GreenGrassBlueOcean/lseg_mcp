@@ -425,3 +425,54 @@ def test_draft_api_call_unresolved_empty_field_name():
     assert "import lseg.data" in res
 
 
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Bug #4 — R code generator should prefer 'fields' over 'Eikonformulas'
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+def test_draft_api_call_r_prefers_fields_over_eikonformulas():
+    """When both 'fields' and 'Eikonformulas' exist in the signature,
+    the generated R code should use 'fields' (the modern alias)."""
+    sig = {
+        "name": "rd_GetData",
+        "args": ["RDObject = rd_connection()", "rics", "Eikonformulas", "fields"],
+        "doc": "Test",
+    }
+    res = draft_api_call(
+        language="r",
+        tickers=["AAPL.O"],
+        fields=["Gross Profit"],
+        mapping_notes=[{"office_field": "TR.GrossProfit", "_target_fcc": "SGRP", "coa": "SGRP"}],
+        signature=sig,
+    )
+    assert "fields = fields" in res
+    assert "Eikonformulas" not in res.split("result <-")[1]  # Not in the function call
+
+
+def test_draft_api_call_r_eikonformulas_fallback():
+    """When only 'Eikonformulas' is in the signature (no 'fields'),
+    it should still be used as the parameter name."""
+    sig = {
+        "name": "rd_GetData",
+        "args": ["RDObject = rd_connection()", "rics", "Eikonformulas"],
+        "doc": "Test",
+    }
+    res = draft_api_call(
+        language="r",
+        tickers=["AAPL.O"],
+        fields=["Gross Profit"],
+        mapping_notes=[{"office_field": "TR.GrossProfit", "_target_fcc": "SGRP", "coa": "SGRP"}],
+        signature=sig,
+    )
+    assert "Eikonformulas = fields" in res
+
+
+def test_draft_api_call_r_no_signature_uses_fields():
+    """Without any signature, the generated R code should use 'fields'."""
+    res = draft_api_call(
+        language="r",
+        tickers=["AAPL.O"],
+        fields=["Gross Profit"],
+        mapping_notes=[{"office_field": "TR.GrossProfit", "_target_fcc": "SGRP", "coa": "SGRP"}],
+    )
+    assert "fields = fields" in res
+    assert "Eikonformulas" not in res

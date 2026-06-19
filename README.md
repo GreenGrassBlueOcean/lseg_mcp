@@ -48,11 +48,12 @@ The agent will autonomously use the `lseg-mcp` tools to:
 
 ## Features
 
-- **Semantic Mapping Engine**: Translates legacy Refinitiv COA codes to industry-specific modern LSEG FCC formulas automatically. Handles additive arrays, ASR bracket notation, and industry routing.
+- **Semantic Mapping Engine**: Translates legacy Refinitiv COA codes to industry-specific modern LSEG FCC formulas automatically. Handles additive arrays, ASR bracket notation, and industry routing. Includes a **fuzzy fallback** (via `difflib`) so misspellings like "Groos Proffit" still resolve to the correct field.
 - **Extended Data Dictionary**: Fuzzy-searchable catalog of hundreds of real TR.* fields for Pricing, Estimates, ESG, Reference, Valuation, etc. (seeded from RefinitivR usage + curated). Complements the financials matrix. See `search_data_dictionary`.
 - **User-Extensible via DIB / Screener**: Drop "Custom_Fields", "Data Dictionary", or "DIB Export" sheets (or point `LSEG_DATA_DICTIONARY_PATH` at a CSV/Excel) — the LLM instantly sees your private or curated fields alongside the seeds. Includes ready-made harvesters in both R (`R/harvest_lseg_fields.R`) and Python (`scripts/harvest_lseg_fields.py` using pandas + openpyxl) for Screener "Export All as Formulas" and DIB exports.
 - **Short-Lived Caching**: Uses an in-memory asynchronous TTL (Time-To-Live) cache to completely eliminate duplicate queries, optimizing response times and reducing external workspace API hits (e.g., `[CACHE HIT] search_financial_mapping (key: AAPL.O Gross Profit) — 4.2ms`).
-- **Polyglot Code Generation**: Merges mapping-aware field resolution with live AST-verified function signatures to generate syntactically correct boilerplate in Python and R.
+- **Polyglot Code Generation**: Merges mapping-aware field resolution with live AST-verified function signatures to generate syntactically correct boilerplate in Python and R. Fields that cannot be resolved through the mapping matrix or data dictionary are **included with a `# WARNING` comment** instead of being silently dropped.
+- **Industry-Aware Validation**: `validate_lseg_formula` distinguishes between genuinely unknown fields (`NOT_FOUND`) and fields that exist but aren't applicable for the requested industry (`INDUSTRY_MISMATCH`), with a message listing the industries where the field *is* available.
 - **AST-Driven Introspection**: Performs static analysis to read function signatures directly from the Python and R source code without executing unsafe scripts.
 - **Continuous Synchronization**: Automatically performs `git pull` and `pip install --upgrade` to ensure the MCP server is always synchronized with the underlying SDKs.
 
@@ -241,7 +242,7 @@ These logs will stream directly into the `startup.log` file:
 
 ## Testing
 
-The project maintains **98% absolute line coverage**. To run the test suite:
+The project maintains **99% absolute line coverage** across **200+ tests**. To run the test suite:
 
 ```bash
 pytest --cov=src --cov-report=term-missing tests/

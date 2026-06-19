@@ -395,10 +395,25 @@ async def validate_lseg_formula(
             # valid extended dictionary items (Pricing / Estimates / ESG / ...).
             # Fall back to the data dictionary before declaring NOT_FOUND so the
             # tool stays consistent with search_data_dictionary.
+            #
+            # Also catch "fuzzy false positives": fields that got status=OK from
+            # a low-confidence fuzzy match (e.g. TR.PriceClose matched to VRBE
+            # "Reported Basic EPS").  When the data dictionary has a better hit,
+            # replace the misleading financials mapping with the dd entry.
             dd = await _get_data_dict_async()
             for entry in results:
-                if entry.get("status") != "NOT_FOUND":
+                should_try_dd = False
+
+                if entry.get("status") == "NOT_FOUND":
+                    should_try_dd = True
+                elif entry.get("status") == "OK":
+                    mapping = entry.get("mapping", {})
+                    if mapping.get("_match_type") == "fuzzy":
+                        should_try_dd = True
+
+                if not should_try_dd:
                     continue
+
                 field_name = entry["field"]
                 hits = dd.search(field_name, limit=1)
                 if hits:
@@ -471,6 +486,73 @@ async def search_data_dictionary(
     return await _data_dict_cache.get_or_set(cache_key, _impl)
 
 
+# ── Shared helper: choose best field resolution between financials + dd ──
+
+def _pick_best_resolution(
+    field: str,
+    financials_matches: list[dict[str, Any]],
+    dd_hits: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Choose the best resolution for *field* from two candidate sources.
+
+    Priority rules:
+
+    1. **Substring financials match** — the query appeared literally in
+       a COA code, description, label, or office_field.  High confidence;
+       always preferred.
+    2. **Data dictionary hit** — the data dictionary has a record whose
+       ``field`` name matches the query (exact or token-match).  Preferred
+       over a *fuzzy* financials match because fuzzy matches against the
+       2 000-row financials matrix are often garbage for queries outside
+       the financials domain (e.g. "Price Close" → "Policy Loans").
+    3. **Fuzzy financials match** — used only when the data dictionary
+       has nothing.
+    4. **Unresolved** — neither source found anything.
+    """
+    fin = financials_matches[0] if financials_matches else None
+    dd = dd_hits[0] if dd_hits else None
+
+    fin_is_fuzzy = fin and fin.get("_match_type") == "fuzzy" if fin else False
+
+    # Case 1: high-confidence financials match (substring hit)
+    if fin and not fin_is_fuzzy:
+        return fin
+
+    # Case 2: data dictionary has a hit — prefer it over fuzzy noise
+    if dd:
+        note = dict(dd)
+        note["_source"] = "data_dictionary"
+        # Inject a helpful note for the generator, but only when we
+        # actually have descriptive content.
+        desc = str(note.get("description", "")).strip()
+        params = str(note.get("parameters", "")).strip()
+        if note.get("category") and (desc or params):
+            bits = [f"Extended dict hit ({note['category']})"]
+            if desc:
+                bits.append(f": {desc}")
+            if params:
+                bits.append(f". Parameters example: {params}")
+            note.setdefault("_notes", []).append("".join(bits))
+        return note
+
+    # Case 3: fuzzy financials match (low confidence but better than nothing)
+    if fin:
+        return fin
+
+    # Case 4: not found anywhere
+    return {
+        "field": field,
+        "_unresolved": True,
+        "_notes": [
+            f"WARNING: '{field}' was not found in the financials "
+            "mapping matrix or data dictionary. Verify the field "
+            "name is correct."
+        ],
+    }
+
+
+
+
 @mcp.tool()
 async def draft_api_call(
     language: str,
@@ -504,44 +586,14 @@ async def draft_api_call(
         indexer = _get_indexer()
         dd = await _get_data_dict_async()
 
-        # Resolve each field through the mapping engine (financials) + data dict fallback
+        # Resolve each field through the mapping engine (financials) + data dict
         mapping_notes: list[dict[str, Any]] = []
         for field in fields:
             matches = engine.search(field, industry=industry, limit=1)
-            if matches:
-                mapping_notes.append(matches[0])
-            else:
-                # Fallback to extended dictionary (Pricing / Estimates / ESG / etc.)
-                dhit = dd.search(field, limit=1)
-                if dhit:
-                    note = dhit[0]
-                    note["_source"] = "data_dictionary"
-                    # Inject a helpful note for the generator, but only when we
-                    # actually have descriptive content (avoids empty noise like
-                    # "Extended dict hit (General): . Parameters example: ").
-                    desc = str(note.get("description", "")).strip()
-                    params = str(note.get("parameters", "")).strip()
-                    if note.get("category") and (desc or params):
-                        bits = [f"Extended dict hit ({note['category']})"]
-                        if desc:
-                            bits.append(f": {desc}")
-                        if params:
-                            bits.append(f". Parameters example: {params}")
-                        note.setdefault("_notes", []).append("".join(bits))
-                    mapping_notes.append(note)
-                else:
-                    # Field not found anywhere — pass it through with a warning
-                    # so the code generator can emit it with a comment instead
-                    # of silently dropping it.
-                    mapping_notes.append({
-                        "field": field,
-                        "_unresolved": True,
-                        "_notes": [
-                            f"WARNING: '{field}' was not found in the financials "
-                            "mapping matrix or data dictionary. Verify the field "
-                            "name is correct."
-                        ],
-                    })
+            dhit = dd.search(field, limit=1)
+
+            note = _pick_best_resolution(field, matches, dhit)
+            mapping_notes.append(note)
 
         # Get the appropriate function signature (prefer specialized for certain categories)
         func_name = "get_data" if language.lower() == "python" else "rd_GetData"

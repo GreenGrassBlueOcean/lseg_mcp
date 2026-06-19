@@ -157,13 +157,21 @@ def _format_r_call(
     arg_rics = "rics"
     arg_fields = "fields"
     if signature:
+        has_fields_arg = False
+        has_eikonformulas_arg = False
         for a in signature.get("args", []):
             if isinstance(a, str):
                 arg_name = a.split("=")[0].strip()
-                if arg_name == "Eikonformulas":
-                    arg_fields = "Eikonformulas"
+                if arg_name == "fields":
+                    has_fields_arg = True
+                elif arg_name == "Eikonformulas":
+                    has_eikonformulas_arg = True
                 elif arg_name == "instruments":
                     arg_rics = "instruments"  # pragma: no cover
+        # Prefer the modern 'fields' alias; only fall back to the
+        # deprecated 'Eikonformulas' when 'fields' is not in the signature.
+        if has_eikonformulas_arg and not has_fields_arg:
+            arg_fields = "Eikonformulas"
 
     lines.append(f"rics  <- c({ticker_r})")
     lines.append(f"fields <- c({fields_r})")
