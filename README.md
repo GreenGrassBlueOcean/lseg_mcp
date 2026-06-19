@@ -6,9 +6,34 @@
 [![Python Support](https://img.shields.io/badge/Python-3.11%20%7C%203.12%20%7C%203.14-blue?logo=python)](https://github.com/GreenGrassBlueOcean/lseg_mcp/actions/workflows/ci.yml)
 ![PyPI Compliant](https://img.shields.io/badge/PyPI-Compliant_(Not_Published)-yellow?logo=pypi)
 
-`lseg-mcp` is an asynchronous, introspective Model Context Protocol (MCP) server that acts as a definitive bridge between LLMs and the London Stock Exchange Group (LSEG) data APIs.
+> **This MCP server does not return market data.** It helps AI agents write *correct, runnable* LSEG data-retrieval code in Python ([`lseg-data`](https://pypi.org/project/lseg-data/)) or R ([`RefinitivR`](https://github.com/GreenGrassBlueOcean/RefinitivR)). You run the generated code against your own LSEG session to get the data.
 
-It enables AI agents to confidently draft perfectly formatted financial data retrieval pipelines in both Python (`lseg-data`) and R (`RefinitivR`).
+`lseg-mcp` is an asynchronous, introspective Model Context Protocol (MCP) server that bridges LLMs and the London Stock Exchange Group (LSEG) data APIs. It resolves field names to the correct modern FCC/`TR.*` formulas, verifies function signatures via static AST analysis, and drafts perfectly formatted retrieval pipelines in both Python (`lseg-data`) and R (`RefinitivR`).
+
+## Contents
+
+- [Quick Start](#quick-start) · [Examples](#agentic-interaction-examples) · [Tools & Resources](#tools--resources) · [Features](#features)
+- [Prerequisites](#prerequisites) · [Extending the Data Dictionary](#extending-the-data-dictionary-pricing-estimates-esg-) · [Environment Variables](#environment-variables)
+- [Running Locally](#running-the-server-locally) · [Monitoring](#monitoring--observability) · [Testing](#testing) · [Architecture](ARCHITECTURE.md)
+
+## Quick Start
+
+Add this to your MCP client config (Claude Desktop, Cursor, VS Code, Antigravity, …) — no clone required:
+
+```json
+{
+  "mcpServers": {
+    "lseg-mcp": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/GreenGrassBlueOcean/lseg_mcp.git", "lseg-mcp"]
+    }
+  }
+}
+```
+
+Once on PyPI, this simplifies to `"args": ["lseg-mcp"]` (publication pending).
+
+> **First launch takes ~1–3 minutes**: it clones `RefinitivR`, installs `lseg-data`, parses the mapping workbook, and builds the AST indexes. Tail [`startup.log`](#monitoring--observability) while you wait — subsequent starts are fast.
 
 ## Agentic Interaction Examples
 
@@ -24,6 +49,18 @@ The agent will autonomously use the `lseg-mcp` tools to:
 1. Call `search_financial_mapping` to identify the correct FCC mappings (e.g., resolving legacy COA codes for Gross Profit to their modern `TR.GrossProfit` equivalents, respecting industry routes).
 2. Call `get_package_signature` to retrieve the live, exact AST-parsed signature for `rd_GetData` from the `RefinitivR` package.
 3. Call `draft_api_call` to merge the mappings with the AST signature, instantly generating a syntactically flawless R script.
+
+**What you get back:**
+```r
+library(Refinitiv)
+RefinitivR::rd_GetData(
+  rics   = c("AAPL.O", "MSFT.O"),
+  fields = c("TR.GrossProfit", "TR.EBITDA", "TR.EPS"),
+  parameters = list(SDate = "0", EDate = "-9", Frq = "FY")
+)
+# NOTE: 'Gross Profit' resolved to TR.GrossProfit via industrial FCC routing.
+```
+Without the MCP, an LLM commonly hallucinates fields like `TR.Revenue` or the deprecated `Eikonformulas` parameter; with the mapping engine it lands on the correct modern `TR.*` formula and the live `fields` argument.
 
 ### Example 2: Python (`lseg-data`)
 
@@ -46,12 +83,32 @@ The agent will autonomously use the `lseg-mcp` tools to:
 3. Calls `search_data_dictionary("esg score", category="ESG")` → surfaces `rd_GetESG` recommendation.
 4. `draft_api_call(language="r", ...)` produces clean code using the right surface (general `rd_GetData` for price + specialized for estimates/ESG where appropriate), with parameter examples pulled from the dictionary.
 
+## Tools & Resources
+
+The server exposes **7 tools** and **3 read-only resources** over the MCP protocol:
+
+| Tool | Purpose |
+|------|---------|
+| `search_financial_mapping` | Fuzzy-search the Financials → Company Fundamentals matrix; resolves legacy COA codes to modern FCC/`TR.*` formulas (industry-aware, batchable). |
+| `search_data_dictionary` | Fuzzy-search the extended dictionary (Pricing, Estimates, ESG, Reference, Valuation, …) for real `TR.*` fields and their parameters. |
+| `validate_lseg_formula` | Validate drafted fields, distinguishing `NOT_FOUND` from `INDUSTRY_MISMATCH`, with a data-dictionary fallback. |
+| `get_package_signature` | Fetch a live, AST-parsed function signature (e.g. `rd_GetData`, `ld.get_data`) from the local index. |
+| `draft_api_call` | Merge field resolution + AST signatures into runnable Python/R boilerplate (unresolved fields kept with a `# WARNING`). |
+| `get_mapping_rules` | Retrieve the overarching mapping definitions and categorical rules. |
+| `rescan_packages` | Force a re-index of the Python (`lseg-data`) and R (`RefinitivR`) packages. |
+
+| Resource | Purpose |
+|----------|---------|
+| `matrix://financials_to_fundamentals` | Markdown view of the global mapping rules and category definitions. |
+| `pkg://lseg-data/exports` | Live hierarchical view of all Python functions in the current `lseg-data` package. |
+| `pkg://RefinitivR/exports` | Live hierarchical view of all R functions exported by the current `RefinitivR` commit. |
+
 ## Features
 
 - **Semantic Mapping Engine**: Translates legacy Refinitiv COA codes to industry-specific modern LSEG FCC formulas automatically. Handles additive arrays, ASR bracket notation, and industry routing. Includes a **fuzzy fallback** (via `difflib`) so misspellings like "Groos Proffit" still resolve to the correct field.
 - **Extended Data Dictionary**: Fuzzy-searchable catalog of hundreds of real TR.* fields for Pricing, Estimates, ESG, Reference, Valuation, etc. (seeded from RefinitivR usage + curated). Complements the financials matrix. See `search_data_dictionary`.
 - **User-Extensible via DIB / Screener**: Drop "Custom_Fields", "Data Dictionary", or "DIB Export" sheets (or point `LSEG_DATA_DICTIONARY_PATH` at a CSV/Excel) — the LLM instantly sees your private or curated fields alongside the seeds. Includes ready-made harvesters in both R (`R/harvest_lseg_fields.R`) and Python (`scripts/harvest_lseg_fields.py` using pandas + openpyxl) for Screener "Export All as Formulas" and DIB exports.
-- **Short-Lived Caching**: Uses an in-memory asynchronous TTL (Time-To-Live) cache to completely eliminate duplicate queries, optimizing response times and reducing external workspace API hits (e.g., `[CACHE HIT] search_financial_mapping (key: AAPL.O Gross Profit) — 4.2ms`).
+- **Short-Lived Caching**: Uses an in-memory asynchronous TTL (Time-To-Live) cache to completely eliminate duplicate queries, optimizing response times and reducing duplicate tool round-trips and Excel/AST reloads (e.g., `[CACHE HIT] search_financial_mapping (key: AAPL.O Gross Profit) — 4.2ms`).
 - **Polyglot Code Generation**: Merges mapping-aware field resolution with live AST-verified function signatures to generate syntactically correct boilerplate in Python and R. Fields that cannot be resolved through the mapping matrix or data dictionary are **included with a `# WARNING` comment** instead of being silently dropped.
 - **Industry-Aware Validation**: `validate_lseg_formula` distinguishes between genuinely unknown fields (`NOT_FOUND`) and fields that exist but aren't applicable for the requested industry (`INDUSTRY_MISMATCH`), with a message listing the industries where the field *is* available.
 - **AST-Driven Introspection**: Performs static analysis to read function signatures directly from the Python and R source code without executing unsafe scripts.
@@ -59,7 +116,7 @@ The agent will autonomously use the `lseg-mcp` tools to:
 
 ## Use Cases
 
-`lseg-mcp` is designed for quantitative researchers, data engineers, and AI agents who need reliable, scalable access to financial data:
+`lseg-mcp` is designed for quantitative researchers, data engineers, and AI agents who need reliable, scalable generation of financial data-retrieval code:
 - **Autonomous Pipeline Generation**: Ask an AI agent to "pull 10 years of normalized EPS for Apple and Microsoft in R" and receive a robust, mapping-verified `RefinitivR` pipeline in seconds without manually hunting for COA codes.
 - **Cross-Language Transitions**: Seamlessly port legacy Python scripts using `lseg-data` into enterprise R pipelines using the identical semantic translation engine.
 - **Automated Refactoring**: Identify deprecated `Eikonformulas` in existing codebases and automatically map them to their modern FCC equivalents.
@@ -74,33 +131,15 @@ Following a comprehensive architectural audit, `lseg-mcp` has been hardened for 
 
 ## Prerequisites
 
-- Python 3.11+
-- Git
-- Access to LSEG Workspace (running in the background for live data retrieval)
+The MCP server itself never connects to LSEG — it only resolves fields and drafts code. A live LSEG session is only needed to *execute* the code it produces.
+
+| To run the MCP server | To execute the generated code |
+|-----------------------|-------------------------------|
+| Python 3.11+, Git, and `uv` or `pip` | LSEG Workspace (or Eikon) running, plus `lseg-data` (Python) / `RefinitivR` (R) |
 
 ## Installation & Configuration
 
-The server operates over standard input/output (stdio) using the JSON-RPC 2.0 protocol.
-
-### One-Click Install (Recommended)
-
-You can run the server directly via `uvx` without needing to clone the repository. Point your MCP client (like Claude Desktop or Antigravity) directly to the package:
-
-```json
-{
-  "mcpServers": {
-    "lseg-mcp": {
-      "command": "uvx",
-      "args": [
-        "lseg-mcp"
-      ]
-    }
-  }
-}
-```
-
-*Note: While the package is pending official PyPI publication, you can install directly from GitHub using:*
-`"command": "uvx", "args": ["--from", "git+https://github.com/GreenGrassBlueOcean/lseg_mcp.git", "lseg-mcp"]`
+The server operates over standard input/output (stdio) using the JSON-RPC 2.0 protocol. The recommended `uvx` config is in [Quick Start](#quick-start) — the same `command`/`args` block works for Claude Desktop, Cursor, VS Code, and Antigravity.
 
 ### Extending the Data Dictionary (Pricing, Estimates, ESG, ...)
 
@@ -131,21 +170,19 @@ See `R/harvest_lseg_fields.R` and the "Example 3" above.
 
 **R harvester using RefinitivRAPI (the one with `rd_handshake()`) – for direct RDP / bearer token connections:**
 
-The RefinitivRAPI source lives at `Documents\code\R\RefinitivRAPI`.
-
-After you run `RefinitivRAPI::rd_handshake()` in your R session (the one that gave you the bearer token), source the harvester:
+By default the harvester loads RefinitivRAPI from `~/Documents/code/R/RefinitivRAPI` — edit the `refinitivrapi_path` at the top of the script if your checkout lives elsewhere. After running `RefinitivRAPI::rd_handshake()` in the R session that issued the bearer token, source the harvester:
 
 ```r
-source("C:/Users/laurensvdb/Documents/GitHub/lseg_mcp/scripts/harvest_real_fields_via_refinitivrapi.R")
+source("<path-to-lseg_mcp>/scripts/harvest_real_fields_via_refinitivrapi.R")
 ```
 
 It will:
-- Force-load from your `Documents\code\R\RefinitivRAPI` dev folder
+- Load RefinitivRAPI from your local dev folder
 - Use the live connection/token from the handshake
-- Call the real `rd_Get*` functions (using the correct `Eikonformulas` param for rd_GetData)
+- Call the real `rd_Get*` functions (using the correct `Eikonformulas` param for `rd_GetData`)
 - Write CSVs into `lseg_mcp/data/`
 
-**Important**: The script now prints the *actual error messages* from failed calls and includes a "smoke test". Re-source and run it again after the handshake. The previous run failed on param name (`fields` vs `Eikonformulas` — now fixed to match your working manual call). Estimates/ESG may still 500 depending on your token scope / API implementation.
+The script prints the actual error messages from failed calls and includes a smoke test. Estimates/ESG endpoints may return 500 depending on your token scope / API implementation.
 
 **Python harvester (pandas + openpyxl) – great when you prefer Python or work in notebooks:**
 
@@ -187,9 +224,15 @@ pip install -e ".[dev]"
 
 ### Environment Variables
 
-The server automatically manages its own dependencies and mappings within your platform's local application data directory (e.g., `%LOCALAPPDATA%\lseg-mcp\` on Windows). However, you can explicitly override these paths:
-- `LSEG_MAPPING_PATH`: Absolute path to a custom Excel mapping matrix.
-- `REFINITIVR_PATH`: Absolute path to the RefinitivR repository (auto-cloned if missing).
+The server automatically manages its own dependencies and mappings within your platform's local application data directory (e.g., `%LOCALAPPDATA%\lseg-mcp\` on Windows). You can override these defaults:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `LSEG_MAPPING_PATH` | bundled `LSEG_Mapping.xlsx` | Absolute path to a custom Excel mapping matrix. |
+| `LSEG_DATA_DICTIONARY_PATH` | bundled seed | Absolute path to a CSV/Excel of extended `TR.*` fields (see [Extending the Data Dictionary](#extending-the-data-dictionary-pricing-estimates-esg-)). |
+| `REFINITIVR_PATH` | `%LOCALAPPDATA%/lseg-mcp/...` | Absolute path to the RefinitivR repository (auto-cloned if missing). |
+| `LSEG_FORCE_REINDEX` | `0` | Set to `1` to force a full AST re-index on startup. |
+| `LSEG_ALLOW_ENV_MUTATION` | `0` | Set to `1` to permit `rescan_packages` to mutate process environment variables. |
 
 ## Running the Server Locally
 
@@ -251,3 +294,13 @@ pytest --cov=src --cov-report=term-missing tests/
 ## Architecture
 
 For a comprehensive dive into the internal semantic mapping engine, the AST parser bracket-balancing algorithms, and the polyglot generator templates, please see [ARCHITECTURE.md](ARCHITECTURE.md).
+
+## Contributing
+
+Issues and pull requests are welcome — see [Development Installation](#development-installation) to get set up, and run `pytest` before submitting.
+
+## License
+
+Released under the [MIT License](LICENSE).
+
+> **Disclaimer:** This is an independent, community-built tool and is **not affiliated with, endorsed by, or supported by** LSEG, Refinitiv, or Eikon. Use at your own risk.
