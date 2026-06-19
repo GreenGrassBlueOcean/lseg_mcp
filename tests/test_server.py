@@ -939,3 +939,30 @@ def test_pick_best_resolution_unresolved():
     result = server._pick_best_resolution("TR.Bogus", [], [])
     assert result["_unresolved"] is True
     assert "WARNING" in result["_notes"][0]
+
+
+@pytest.mark.asyncio
+async def test_validate_lseg_formula_ok_fuzzy_replaced_by_dd(mocker):
+    """An OK field backed by a low-confidence fuzzy mapping should be replaced
+    with a data-dictionary hit when one exists (server.py fuzzy branch)."""
+    mock_engine = mocker.MagicMock()
+    mock_engine.validate_formula.return_value = [
+        {
+            "field": "TR.PriceClose",
+            "status": "OK",
+            "mapping": {"office_field": "VRBE", "_match_type": "fuzzy"},
+        }
+    ]
+    mocker.patch("lseg_mcp.server._get_mapping_async", return_value=mock_engine)
+
+    mock_dd = mocker.MagicMock()
+    mock_dd.search.return_value = [{"field": "TR.PriceClose", "category": "Pricing"}]
+    mocker.patch("lseg_mcp.server._get_data_dict_async", return_value=mock_dd)
+
+    res = await server.validate_lseg_formula(["TR.PriceClose"])
+    entry = json.loads(res)[0]
+
+    assert entry["status"] == "OK"
+    assert entry["source"] == "data_dictionary"
+    assert entry["mapping"] == {"field": "TR.PriceClose", "category": "Pricing"}
+    mock_dd.search.assert_called_once_with("TR.PriceClose", limit=1)
