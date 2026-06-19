@@ -292,6 +292,19 @@ def test_fuzzy_fallback_respects_limit(mock_pandas_read_excel):
     assert len(res) <= 1
 
 
+def test_fuzzy_fallback_missing_column_guard(mock_pandas_read_excel):
+    """When a text column is missing from df, _fuzzy_fallback should skip it gracefully."""
+    engine = MappingEngine(xlsx_path="dummy.xlsx")
+    # Access .df to trigger lazy _load(), then drop 'label' to exercise
+    # the `if col not in df.columns: continue` guard (line 375)
+    _ = engine.df
+    engine._df = engine._df.drop(columns=["label"])
+    df = engine._fuzzy_fallback("Groos Reveneu")
+    # Should still match via coa_description
+    assert not df.empty
+    assert "RREV" in df["coa"].values
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  Bug #2 — Industry mismatch vs NOT_FOUND
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
