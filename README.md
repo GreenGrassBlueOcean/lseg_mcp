@@ -168,22 +168,6 @@ export_starter_packs(".")
 
 See `R/harvest_lseg_fields.R` and the "Example 3" above.
 
-**R harvester using RefinitivRAPI (the one with `rd_handshake()`) – for direct RDP / bearer token connections:**
-
-By default the harvester loads RefinitivRAPI from `~/Documents/code/R/RefinitivRAPI` — edit the `refinitivrapi_path` at the top of the script if your checkout lives elsewhere. After running `RefinitivRAPI::rd_handshake()` in the R session that issued the bearer token, source the harvester:
-
-```r
-source("<path-to-lseg_mcp>/scripts/harvest_real_fields_via_refinitivrapi.R")
-```
-
-It will:
-- Load RefinitivRAPI from your local dev folder
-- Use the live connection/token from the handshake
-- Call the real `rd_Get*` functions (using the correct `Eikonformulas` param for `rd_GetData`)
-- Write CSVs into `lseg_mcp/data/`
-
-The script prints the actual error messages from failed calls and includes a smoke test. Estimates/ESG endpoints may return 500 depending on your token scope / API implementation.
-
 **Python harvester (pandas + openpyxl) – great when you prefer Python or work in notebooks:**
 
 ```bash
