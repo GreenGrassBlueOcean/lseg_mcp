@@ -40,6 +40,11 @@ def _format_python_call(
     for note in mapping_notes:
         if note.get("_additive"):
             additive_fields.append(note)
+        elif note.get("_unresolved"):
+            # Unresolved fields: include them as-is with a warning
+            val = note.get("field", "")
+            if val and str(val).strip():
+                simple_fields.append(str(val))
         else:
             # Financials matrix rows carry 'office_field'; extended data
             # dictionary hits carry the field name under 'field'.
@@ -125,6 +130,11 @@ def _format_r_call(
     for note in mapping_notes:
         if note.get("_additive"):
             additive_fields.append(note)
+        elif note.get("_unresolved"):
+            # Unresolved fields: include them as-is with a warning
+            val = note.get("field", "")
+            if val and str(val).strip():
+                simple_fields.append(str(val))
         else:
             # Financials matrix rows carry 'office_field'; extended data
             # dictionary hits carry the field name under 'field'.

@@ -1,0 +1,10 @@
+RefinitivRAPI Live Field Harvest
+Time: 2026-06-09 21:27:30.362044
+Ticker: AAPL.O
+
+Fields harvested:
+  General: 59
+
+Next: point LSEG_DATA_DICTIONARY_PATH at one of the CSVs,
+or feed them through scripts/harvest_lseg_fields.py for further polishing.
+Then restart lseg-mcp or call rescan_packages.

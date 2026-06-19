@@ -1,0 +1,49 @@
+LSEG Real Field Harvest Report
+Timestamp: 2026-06-09 20:32:14.924972
+Ticker used: AAPL.O
+
+Estimates:view-summary/annual (basic) -> All 2 retry attempts failed. Last error: Failed to perform HTTP request.
+Caused by error in `curl::curl_fetch_memory()`:
+! Could not connect to server [localhost]:
+Failed to connect to localhost port 80 after 2258 ms: Could not connect to server
+Estimates:view-summary/annual (standard) -> All 2 retry attempts failed. Last error: Failed to perform HTTP request.
+Caused by error in `curl::curl_fetch_memory()`:
+! Could not connect to server [localhost]:
+Failed to connect to localhost port 80 after 2234 ms: Could not connect to server
+Estimates:view-summary/interim (basic) -> All 2 retry attempts failed. Last error: Failed to perform HTTP request.
+Caused by error in `curl::curl_fetch_memory()`:
+! Could not connect to server [localhost]:
+Failed to connect to localhost port 80 after 2231 ms: Could not connect to server
+Estimates:view-summary/interim (standard) -> All 2 retry attempts failed. Last error: Failed to perform HTTP request.
+Caused by error in `curl::curl_fetch_memory()`:
+! Could not connect to server [localhost]:
+Failed to connect to localhost port 80 after 2229 ms: Could not connect to server
+Estimates:view-summary/recommendations (basic) -> All 2 retry attempts failed. Last error: Failed to perform HTTP request.
+Caused by error in `curl::curl_fetch_memory()`:
+! Could not connect to server [localhost]:
+Failed to connect to localhost port 80 after 2248 ms: Could not connect to server
+Estimates:view-summary/recommendations (standard) -> All 2 retry attempts failed. Last error: Failed to perform HTTP request.
+Caused by error in `curl::curl_fetch_memory()`:
+! Could not connect to server [localhost]:
+Failed to connect to localhost port 80 after 2251 ms: Could not connect to server
+Estimates:view-actuals/annual (basic) -> All 2 retry attempts failed. Last error: Failed to perform HTTP request.
+Caused by error in `curl::curl_fetch_memory()`:
+! Could not connect to server [localhost]:
+Failed to connect to localhost port 80 after 2247 ms: Could not connect to server
+Estimates:view-actuals/annual (standard) -> All 2 retry attempts failed. Last error: Failed to perform HTTP request.
+Caused by error in `curl::curl_fetch_memory()`:
+! Could not connect to server [localhost]:
+Failed to connect to localhost port 80 after 2232 ms: Could not connect to server
+Estimates:view-actuals/interim (basic) -> All 2 retry attempts failed. Last error: Failed to perform HTTP request.
+Caused by error in `curl::curl_fetch_memory()`:
+! Could not connect to server [localhost]:
+Failed to connect to localhost port 80 after 2229 ms: Could not connect to server
+Estimates:view-actuals/interim (standard) -> All 2 retry attempts failed. Last error: Failed to perform HTTP request.
+Caused by error in `curl::curl_fetch_memory()`:
+! Could not connect to server [localhost]:
+Failed to connect to localhost port 80 after 2234 ms: Could not connect to server
+
+Fields harvested per category:
+
+Combined file: real_fields_combined.csv
+You can now use these with the Python harvester or set LSEG_DATA_DICTIONARY_PATH.

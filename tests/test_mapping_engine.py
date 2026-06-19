@@ -168,3 +168,216 @@ def test_enrichment_bank_only_scope_note(mock_pandas_read_excel):
     notes = " ".join(res[0]["_notes"])
     assert "available for Bank" in notes
     assert "NOT available for Industrial, Insurance, Utility" in notes
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Bug #1 — Fuzzy fallback for typos
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+def test_fuzzy_fallback_typo_gross_revenue(mock_pandas_read_excel):
+    """Misspelling 'Groos Reveneu' should fuzzy-match to 'Gross Revenue'."""
+    engine = MappingEngine(xlsx_path="dummy.xlsx")
+    res = engine.search("Groos Reveneu")
+    assert len(res) >= 1
+    assert res[0]["coa"] == "RREV"
+
+
+def test_fuzzy_fallback_typo_total_dbt(mock_pandas_read_excel):
+    """Misspelling 'Totl Debt' should fuzzy-match to 'Total Debt'."""
+    engine = MappingEngine(xlsx_path="dummy.xlsx")
+    res = engine.search("Totl Debt")
+    assert len(res) >= 1
+    assert res[0]["coa"] == "RDEBT"
+
+
+def test_fuzzy_fallback_no_match(mock_pandas_read_excel):
+    """Completely unrelated query should still return empty."""
+    engine = MappingEngine(xlsx_path="dummy.xlsx")
+    res = engine.search("xyzzy_gibberish_12345")
+    assert len(res) == 0
+
+
+def test_fuzzy_fallback_returns_dataframe(mock_pandas_read_excel):
+    """Direct call to _fuzzy_fallback returns a DataFrame."""
+    engine = MappingEngine(xlsx_path="dummy.xlsx")
+    df = engine._fuzzy_fallback("Groos Reveneu")
+    assert not df.empty
+    assert "RREV" in df["coa"].values
+
+
+def test_fuzzy_fallback_empty_columns_on_no_match(mock_pandas_read_excel):
+    """_fuzzy_fallback returns empty DF with correct columns when nothing matches."""
+    engine = MappingEngine(xlsx_path="dummy.xlsx")
+    df = engine._fuzzy_fallback("xyzzy_gibberish_12345")
+    assert df.empty
+    # Columns should still match the main df
+    assert list(df.columns) == list(engine.df.columns)
+
+
+def test_fuzzy_exact_match_takes_priority(mock_pandas_read_excel):
+    """An exact substring match must NOT trigger fuzzy fallback."""
+    engine = MappingEngine(xlsx_path="dummy.xlsx")
+    # "Gross Revenue" is an exact match — must return deterministically
+    res = engine.search("Gross Revenue")
+    assert len(res) == 1
+    assert res[0]["coa"] == "RREV"
+
+
+def test_fuzzy_fallback_single_char_typo(mock_pandas_read_excel):
+    """A single-character typo should still fuzzy-match."""
+    engine = MappingEngine(xlsx_path="dummy.xlsx")
+    res = engine.search("Gross Revenve")  # 'v' instead of 'u'
+    assert len(res) >= 1
+    assert res[0]["coa"] == "RREV"
+
+
+def test_fuzzy_fallback_matches_label_not_description(mock_pandas_read_excel):
+    """Fuzzy matching should also work against 'label' column."""
+    engine = MappingEngine(xlsx_path="dummy.xlsx")
+    # 'Dividnds' is a typo for label 'Dividends'
+    res = engine.search("Dividnds")
+    assert len(res) >= 1
+    assert res[0]["coa"] == "RDIV"
+
+
+def test_fuzzy_fallback_case_insensitive(mock_pandas_read_excel):
+    """Fuzzy match is case-insensitive."""
+    engine = MappingEngine(xlsx_path="dummy.xlsx")
+    res = engine.search("GROOS REVENEU")
+    assert len(res) >= 1
+    assert res[0]["coa"] == "RREV"
+
+
+def test_fuzzy_with_industry_filter_applied_after_fuzzy(mock_pandas_read_excel):
+    """Fuzzy match 'Totl Debt' → 'Total Debt', then industry filter bank should still return it."""
+    engine = MappingEngine(xlsx_path="dummy.xlsx")
+    res = engine.search("Totl Debt", industry="bank")
+    assert len(res) >= 1
+    assert res[0]["coa"] == "RDEBT"
+
+
+def test_fuzzy_with_industry_filter_excludes(mock_pandas_read_excel):
+    """Fuzzy match 'Groos Reveneu' → 'Gross Revenue', but bank filter should exclude it."""
+    engine = MappingEngine(xlsx_path="dummy.xlsx")
+    res = engine.search("Groos Reveneu", industry="bank")
+    assert len(res) == 0
+
+
+def test_fuzzy_with_statement_filter(mock_pandas_read_excel):
+    """Fuzzy match combined with statement filter."""
+    engine = MappingEngine(xlsx_path="dummy.xlsx")
+    # Typo for 'Total Debt' which is on Balance Sheet
+    res_bs = engine.search("Totl Debt", statement="Balance Sheet")
+    assert len(res_bs) >= 1
+    assert res_bs[0]["coa"] == "RDEBT"
+    # Same typo filtered to Income Statement should return nothing
+    res_is = engine.search("Totl Debt", statement="Income Statement")
+    assert len(res_is) == 0
+
+
+def test_fuzzy_results_are_enriched(mock_pandas_read_excel):
+    """Fuzzy-matched results should still be enriched with _notes."""
+    engine = MappingEngine(xlsx_path="dummy.xlsx")
+    res = engine.search("Totl Debt")
+    assert len(res) >= 1
+    # RDEBT has ASR bracket [AFUL] so it should be enriched
+    assert "_asr_flagged" in res[0]
+    assert "_notes" in res[0]
+
+
+def test_fuzzy_fallback_respects_limit(mock_pandas_read_excel):
+    """Limit parameter should cap results even in fuzzy mode."""
+    engine = MappingEngine(xlsx_path="dummy.xlsx")
+    res = engine.search("Debt", limit=1)
+    assert len(res) <= 1
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Bug #2 — Industry mismatch vs NOT_FOUND
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+def test_validate_formula_industry_mismatch(mock_pandas_read_excel):
+    """RREV exists for Industrial but NOT for Bank.
+    Should return INDUSTRY_MISMATCH, not NOT_FOUND."""
+    engine = MappingEngine(xlsx_path="dummy.xlsx")
+    results = engine.validate_formula(["RREV"], industry="bank")
+    assert len(results) == 1
+    assert results[0]["status"] == "INDUSTRY_MISMATCH"
+    assert "not applicable for industry 'bank'" in results[0]["message"]
+    assert "Industrial" in results[0]["message"]
+    assert results[0]["mapping"]["coa"] == "RREV"
+
+
+def test_validate_formula_still_not_found(mock_pandas_read_excel):
+    """A genuinely unknown field should still be NOT_FOUND even with industry."""
+    engine = MappingEngine(xlsx_path="dummy.xlsx")
+    results = engine.validate_formula(["NONEXISTENT"], industry="bank")
+    assert len(results) == 1
+    assert results[0]["status"] == "NOT_FOUND"
+
+
+def test_validate_formula_no_industry_unchanged(mock_pandas_read_excel):
+    """Without industry filter, valid field stays OK, unknown stays NOT_FOUND."""
+    engine = MappingEngine(xlsx_path="dummy.xlsx")
+    results = engine.validate_formula(["RREV", "NONEXISTENT"])
+    assert results[0]["status"] == "OK"
+    assert results[1]["status"] == "NOT_FOUND"
+
+
+def test_validate_formula_reverse_mismatch_bank_only_for_industrial(mock_pandas_read_excel):
+    """RDEBT_BANK is bank-only; validating for industrial should return INDUSTRY_MISMATCH."""
+    engine = MappingEngine(xlsx_path="dummy.xlsx")
+    results = engine.validate_formula(["RDEBT_BANK"], industry="industrial")
+    assert len(results) == 1
+    assert results[0]["status"] == "INDUSTRY_MISMATCH"
+    assert "not applicable for industry 'industrial'" in results[0]["message"]
+    assert "Bank" in results[0]["message"]
+
+
+def test_validate_formula_zero_applicable_industries(mock_pandas_read_excel):
+    """RINST has all applicability flags False. Validating for bank should
+    show INDUSTRY_MISMATCH with 'Available for: none'."""
+    engine = MappingEngine(xlsx_path="dummy.xlsx")
+    results = engine.validate_formula(["RINST"], industry="bank")
+    assert len(results) == 1
+    assert results[0]["status"] == "INDUSTRY_MISMATCH"
+    assert "Available for: none" in results[0]["message"]
+
+
+def test_validate_formula_mixed_batch_three_statuses(mock_pandas_read_excel):
+    """Mixed batch: one OK, one INDUSTRY_MISMATCH, one NOT_FOUND."""
+    engine = MappingEngine(xlsx_path="dummy.xlsx")
+    # RDIV is applicable for both bank and industrial → OK for bank
+    # RREV is industrial-only → MISMATCH for bank
+    # NONEXISTENT → NOT_FOUND
+    results = engine.validate_formula(["RDIV", "RREV", "NONEXISTENT"], industry="bank")
+    by_field = {r["field"]: r for r in results}
+    assert by_field["RDIV"]["status"] == "OK"
+    assert by_field["RREV"]["status"] == "INDUSTRY_MISMATCH"
+    assert by_field["NONEXISTENT"]["status"] == "NOT_FOUND"
+
+
+def test_validate_formula_mismatch_preserves_mapping_metadata(mock_pandas_read_excel):
+    """INDUSTRY_MISMATCH result should include full mapping record."""
+    engine = MappingEngine(xlsx_path="dummy.xlsx")
+    results = engine.validate_formula(["RREV"], industry="bank")
+    mapping = results[0]["mapping"]
+    assert mapping["office_field"] == "TR.GrossRevenue"
+    assert mapping["coa_description"] == "Gross Revenue"
+    assert "_notes" in mapping
+
+
+def test_validate_formula_mismatch_has_empty_warnings(mock_pandas_read_excel):
+    """INDUSTRY_MISMATCH should have an empty warnings list (the message field carries the info)."""
+    engine = MappingEngine(xlsx_path="dummy.xlsx")
+    results = engine.validate_formula(["RREV"], industry="bank")
+    assert results[0]["warnings"] == []
+
+
+def test_validate_formula_ok_field_same_industry(mock_pandas_read_excel):
+    """A field valid for the requested industry should still return OK."""
+    engine = MappingEngine(xlsx_path="dummy.xlsx")
+    results = engine.validate_formula(["RREV"], industry="industrial")
+    assert results[0]["status"] == "OK"
+
+

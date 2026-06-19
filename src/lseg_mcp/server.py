@@ -529,6 +529,19 @@ async def draft_api_call(
                             bits.append(f". Parameters example: {params}")
                         note.setdefault("_notes", []).append("".join(bits))
                     mapping_notes.append(note)
+                else:
+                    # Field not found anywhere — pass it through with a warning
+                    # so the code generator can emit it with a comment instead
+                    # of silently dropping it.
+                    mapping_notes.append({
+                        "field": field,
+                        "_unresolved": True,
+                        "_notes": [
+                            f"WARNING: '{field}' was not found in the financials "
+                            "mapping matrix or data dictionary. Verify the field "
+                            "name is correct."
+                        ],
+                    })
 
         # Get the appropriate function signature (prefer specialized for certain categories)
         func_name = "get_data" if language.lower() == "python" else "rd_GetData"

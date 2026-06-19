@@ -11,6 +11,7 @@ Ingests the official LSEG mapping Excel workbook and provides:
 
 from __future__ import annotations
 
+import difflib
 import re
 from pathlib import Path
 from typing import Any
@@ -192,6 +193,10 @@ class MappingEngine:
 
         result = df[mask].copy()
 
+        # ── Fuzzy fallback when exact/substring matching returns nothing ──
+        if result.empty:
+            result = self._fuzzy_fallback(query, limit=limit)
+
         # Optional filters
         if statement:
             result = result[
@@ -260,11 +265,49 @@ class MappingEngine:
 
         Returns a list of validation results per field with warnings
         for Not Comparable, missing Primary Instrument, etc.
+
+        When an *industry* filter is active and a field exists in the
+        matrix but is not applicable for that industry, the result is
+        ``INDUSTRY_MISMATCH`` (not ``NOT_FOUND``), with a helpful message
+        listing the industries where the field *is* available.
         """
         results = []
         for field in fields:
             field_upper = field.upper().strip()
             matches = self.search(field_upper, industry=industry, limit=5)
+
+            # ── Industry-scoped miss detection ───────────────────────
+            if not matches and industry:
+                # Retry without industry filter to distinguish
+                # "wrong industry" from "genuinely unknown field"
+                unscoped = self.search(field_upper, industry=None, limit=1)
+                if unscoped:
+                    best = unscoped[0]
+                    applicable = []
+                    for col, label in [
+                        ("bank_applicable", "Bank"),
+                        ("industry_applicable", "Industrial"),
+                        ("insurance_applicable", "Insurance"),
+                        ("utility_applicable", "Utility"),
+                    ]:
+                        if best.get(col) is True:
+                            applicable.append(label)
+                    coa = best.get("coa", field)
+                    desc = best.get("coa_description", "")
+                    avail = ", ".join(applicable) if applicable else "none"
+                    results.append({
+                        "field": field,
+                        "status": "INDUSTRY_MISMATCH",
+                        "message": (
+                            f"'{coa}' ({desc}) exists in the mapping matrix but "
+                            f"is not applicable for industry '{industry}'. "
+                            f"Available for: {avail}."
+                        ),
+                        "warnings": [],
+                        "mapping": best,
+                    })
+                    continue
+
             if not matches:
                 results.append({
                     "field": field,
@@ -312,6 +355,41 @@ class MappingEngine:
             })
 
         return results
+
+    # ── Internal: Fuzzy fallback ──────────────────────────────────────────
+
+    def _fuzzy_fallback(
+        self, query: str, limit: int = 25, cutoff: float = 0.45,
+    ) -> pd.DataFrame:
+        """Return rows whose description/label fuzzy-matches *query*.
+
+        Uses :func:`difflib.get_close_matches` against all unique
+        descriptions and labels.  Returns an empty DataFrame when
+        nothing is close enough.
+        """
+        df = self.df
+        # Build a lookup from lowercase candidate → original values
+        candidates: dict[str, str] = {}
+        for col in ("coa_description", "label"):
+            if col not in df.columns:
+                continue
+            for val in df[col].dropna().unique():
+                s = str(val).strip()
+                if s:
+                    candidates[s.lower()] = s
+
+        close = difflib.get_close_matches(
+            query.lower(), list(candidates.keys()), n=limit, cutoff=cutoff,
+        )
+        if not close:
+            return pd.DataFrame(columns=df.columns)
+
+        matched_originals = {candidates[c] for c in close}
+        mask = pd.Series(False, index=df.index)
+        for col in ("coa_description", "label"):
+            if col in df.columns:
+                mask |= df[col].isin(matched_originals)
+        return df[mask].copy()
 
     # ── Internal Enrichment ──────────────────────────────────────────────
 

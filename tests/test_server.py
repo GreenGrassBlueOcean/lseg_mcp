@@ -688,3 +688,164 @@ async def test_env_mutation_guard_allows_override(mocker):
 
     res = await server.rescan_packages(update_packages=True)
     assert "ok" in res
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Bug #2 — INDUSTRY_MISMATCH in validate_lseg_formula
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@pytest.mark.asyncio
+async def test_validate_lseg_formula_industry_mismatch():
+    """RREV is Industrial-only; validating for bank should return INDUSTRY_MISMATCH."""
+    res = await server.validate_lseg_formula(["RREV"], industry="bank")
+    parsed = json.loads(res)
+    by_field = {e["field"]: e for e in parsed}
+    assert by_field["RREV"]["status"] == "INDUSTRY_MISMATCH"
+    assert "not applicable" in by_field["RREV"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_validate_lseg_formula_industry_mismatch_vs_not_found():
+    """Industry mismatch and genuinely unknown field in the same call."""
+    res = await server.validate_lseg_formula(["RREV", "ZZZ_BOGUS"], industry="bank")
+    parsed = json.loads(res)
+    by_field = {e["field"]: e for e in parsed}
+    # RREV exists but not for bank
+    assert by_field["RREV"]["status"] == "INDUSTRY_MISMATCH"
+    # ZZZ_BOGUS doesn't exist anywhere
+    assert by_field["ZZZ_BOGUS"]["status"] == "NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_validate_lseg_formula_mismatch_bank_only_for_industrial():
+    """RDEBT_BANK is bank-only; validating for industrial should return INDUSTRY_MISMATCH."""
+    res = await server.validate_lseg_formula(["RDEBT_BANK"], industry="industrial")
+    parsed = json.loads(res)
+    assert parsed[0]["status"] == "INDUSTRY_MISMATCH"
+    assert "Bank" in parsed[0]["message"]
+
+
+@pytest.mark.asyncio
+async def test_validate_lseg_formula_mismatch_message_has_available_for():
+    """INDUSTRY_MISMATCH message should list which industries the field IS available for."""
+    res = await server.validate_lseg_formula(["RREV"], industry="bank")
+    parsed = json.loads(res)
+    assert "Available for:" in parsed[0]["message"]
+    assert "Industrial" in parsed[0]["message"]
+
+
+@pytest.mark.asyncio
+async def test_validate_lseg_formula_mismatch_preserves_json_structure():
+    """INDUSTRY_MISMATCH JSON should contain field, status, message, warnings, mapping."""
+    res = await server.validate_lseg_formula(["RREV"], industry="bank")
+    parsed = json.loads(res)
+    record = parsed[0]
+    assert set(record.keys()) >= {"field", "status", "message", "warnings", "mapping"}
+    assert record["warnings"] == []
+    assert isinstance(record["mapping"], dict)
+
+
+@pytest.mark.asyncio
+async def test_validate_lseg_formula_mixed_ok_mismatch_not_found():
+    """Full mixed batch at server level: OK + MISMATCH + NOT_FOUND."""
+    res = await server.validate_lseg_formula(
+        ["RDIV", "RREV", "ZZZ_NONSENSE"], industry="bank"
+    )
+    parsed = json.loads(res)
+    by_field = {e["field"]: e for e in parsed}
+    assert by_field["RDIV"]["status"] == "OK"
+    assert by_field["RREV"]["status"] == "INDUSTRY_MISMATCH"
+    assert by_field["ZZZ_NONSENSE"]["status"] == "NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_validate_lseg_formula_no_industry_still_works():
+    """Without industry filter, validate should return OK for known field."""
+    res = await server.validate_lseg_formula(["RREV"])
+    parsed = json.loads(res)
+    assert parsed[0]["status"] == "OK"
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Bug #3 — Unresolved fields in draft_api_call
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@pytest.mark.asyncio
+async def test_draft_api_call_unresolved_field_included(mocker):
+    """A field that can't be resolved anywhere should still appear in the
+    generated code with a WARNING comment, not be silently dropped."""
+    class MockIndexer:
+        def get_signature(self, lang, func):
+            return {"name": func, "args": [], "doc": "mocked doc"}
+
+    mocker.patch("lseg_mcp.server._get_indexer", return_value=MockIndexer())
+    res = await server.draft_api_call("python", ["AAPL.O"], ["RREV", "TR.CompletelyBogusField"])
+    # RREV resolves through the mapping engine
+    assert "TR.GrossRevenue" in res
+    # TR.CompletelyBogusField doesn't exist anywhere — must still appear
+    assert "TR.CompletelyBogusField" in res
+    assert "WARNING" in res
+
+
+@pytest.mark.asyncio
+async def test_draft_api_call_unresolved_field_r(mocker):
+    """Same test for R language output."""
+    class MockIndexer:
+        def get_signature(self, lang, func):
+            return {"name": "rd_GetData", "args": ["rics", "Eikonformulas"], "doc": "mocked"}
+
+    mocker.patch("lseg_mcp.server._get_indexer", return_value=MockIndexer())
+    res = await server.draft_api_call("r", ["JPM"], ["RREV", "TR.NonsenseField"])
+    assert "TR.GrossRevenue" in res
+    assert "TR.NonsenseField" in res
+    assert "WARNING" in res
+
+
+@pytest.mark.asyncio
+async def test_draft_api_call_all_unresolved(mocker):
+    """When ALL fields are unresolved, the generated code should still contain them."""
+    class MockIndexer:
+        def get_signature(self, lang, func):
+            return {"name": func, "args": [], "doc": "mocked doc"}
+
+    mocker.patch("lseg_mcp.server._get_indexer", return_value=MockIndexer())
+    # Use names distant from any mock data to avoid fuzzy matching
+    res = await server.draft_api_call("python", ["AAPL.O"], ["TR.XyzzyPlugh", "TR.QwertzUiop"])
+    assert "TR.XyzzyPlugh" in res
+    assert "TR.QwertzUiop" in res
+    assert "WARNING" in res
+
+
+@pytest.mark.asyncio
+async def test_draft_api_call_unresolved_with_industry(mocker):
+    """Unresolved field detection still works when industry parameter is passed."""
+    class MockIndexer:
+        def get_signature(self, lang, func):
+            return {"name": func, "args": [], "doc": "mocked doc"}
+
+    mocker.patch("lseg_mcp.server._get_indexer", return_value=MockIndexer())
+    res = await server.draft_api_call(
+        "python", ["AAPL.O"], ["RREV", "TR.MissingIndustry"], industry="industrial"
+    )
+    assert "TR.GrossRevenue" in res
+    assert "TR.MissingIndustry" in res
+    assert "WARNING" in res
+
+
+@pytest.mark.asyncio
+async def test_draft_api_call_unresolved_multiple_tickers(mocker):
+    """Unresolved fields work correctly with multiple tickers."""
+    class MockIndexer:
+        def get_signature(self, lang, func):
+            return {"name": "rd_GetData", "args": ["rics", "Eikonformulas"], "doc": "mocked"}
+
+    mocker.patch("lseg_mcp.server._get_indexer", return_value=MockIndexer())
+    res = await server.draft_api_call(
+        "r", ["AAPL.O", "MSFT.O", "JPM"], ["RREV", "TR.Gibberish"]
+    )
+    assert "TR.GrossRevenue" in res
+    assert "TR.Gibberish" in res
+    assert "AAPL.O" in res
+    assert "JPM" in res
+
+

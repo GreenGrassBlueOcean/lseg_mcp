@@ -225,3 +225,203 @@ def test_draft_api_call_r_parameters_mixed_types():
         parameters={"SDate": "0CY", "Period": 1, "IncludeHistory": True},
     )
     assert 'Parameters = list(SDate = "0CY", Period = 1, IncludeHistory = True)' in res
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Bug #3 — Unresolved fields must not be silently dropped
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+def test_draft_api_call_python_unresolved_field():
+    """An unresolved field should appear in the generated Python code with a WARNING comment."""
+    res = draft_api_call(
+        language="python",
+        tickers=["AAPL.O"],
+        fields=["TR.GrossProfit", "TR.BogusField"],
+        mapping_notes=[
+            {"office_field": "TR.GrossProfit", "_target_fcc": "SGRP", "coa": "SGRP"},
+            {"field": "TR.BogusField", "_unresolved": True, "_notes": [
+                "WARNING: 'TR.BogusField' was not found in the financials mapping matrix or data dictionary."
+            ]},
+        ],
+    )
+    assert "TR.GrossProfit" in res
+    assert "TR.BogusField" in res
+    assert "WARNING" in res
+
+
+def test_draft_api_call_r_unresolved_field():
+    """An unresolved field should appear in the generated R code with a WARNING comment."""
+    res = draft_api_call(
+        language="r",
+        tickers=["JPM"],
+        fields=["TR.NetInterestIncome", "TR.ProvisionForLoanLoss"],
+        mapping_notes=[
+            {"office_field": "TR.NetInterestIncome", "_target_fcc": "SIDI", "coa": "ENII"},
+            {"field": "TR.ProvisionForLoanLoss", "_unresolved": True, "_notes": [
+                "WARNING: 'TR.ProvisionForLoanLoss' was not found in the financials mapping matrix or data dictionary."
+            ]},
+        ],
+    )
+    assert "TR.NetInterestIncome" in res
+    assert "TR.ProvisionForLoanLoss" in res
+    assert "WARNING" in res
+
+
+def test_draft_api_call_all_unresolved():
+    """When ALL fields are unresolved, they should still appear in generated code."""
+    res = draft_api_call(
+        language="python",
+        tickers=["AAPL.O"],
+        fields=["TR.Bogus1", "TR.Bogus2"],
+        mapping_notes=[
+            {"field": "TR.Bogus1", "_unresolved": True, "_notes": ["WARNING: not found"]},
+            {"field": "TR.Bogus2", "_unresolved": True, "_notes": ["WARNING: not found"]},
+        ],
+    )
+    assert "TR.Bogus1" in res
+    assert "TR.Bogus2" in res
+    assert "WARNING" in res
+
+
+def test_draft_api_call_unresolved_preserves_field_casing():
+    """Unresolved field names must preserve their original casing."""
+    res = draft_api_call(
+        language="python",
+        tickers=["AAPL.O"],
+        fields=["TR.MyCustomCasedField"],
+        mapping_notes=[
+            {"field": "TR.MyCustomCasedField", "_unresolved": True,
+             "_notes": ["WARNING: not found"]},
+        ],
+    )
+    assert "TR.MyCustomCasedField" in res
+
+
+def test_draft_api_call_unresolved_mixed_with_additive():
+    """Unresolved + additive + resolved fields in the same call should all appear."""
+    res = draft_api_call(
+        language="python",
+        tickers=["AAPL.O"],
+        fields=["Gross Profit", "Dividends", "TR.BogusField"],
+        mapping_notes=[
+            {"office_field": "TR.GrossProfit", "_target_fcc": "SGRP", "coa": "SGRP"},
+            {"_additive": "SOLL+SLAP", "coa": "RDIV", "coa_description": "RDIV"},
+            {"field": "TR.BogusField", "_unresolved": True,
+             "_notes": ["WARNING: 'TR.BogusField' was not found"]},
+        ],
+    )
+    assert "TR.GrossProfit" in res
+    assert "TR.BogusField" in res
+    assert "SOLL" in res  # additive components
+    assert "WARNING" in res
+
+
+def test_draft_api_call_unresolved_mixed_with_data_dict():
+    """Resolved (matrix) + resolved (data dictionary) + unresolved should all appear."""
+    res = draft_api_call(
+        language="r",
+        tickers=["AAPL.O"],
+        fields=["Gross Profit", "TR.PriceClose", "TR.Nonsense"],
+        mapping_notes=[
+            {"office_field": "TR.GrossProfit", "_target_fcc": "SGRP", "coa": "SGRP"},
+            {"field": "TR.PriceClose", "category": "Pricing", "_source": "data_dictionary"},
+            {"field": "TR.Nonsense", "_unresolved": True,
+             "_notes": ["WARNING: 'TR.Nonsense' not found"]},
+        ],
+    )
+    assert "TR.GrossProfit" in res
+    assert "TR.PriceClose" in res
+    assert "TR.Nonsense" in res
+    assert "WARNING" in res
+
+
+def test_draft_api_call_r_unresolved_in_c_vector():
+    """In R output, unresolved fields should appear inside the c() vector."""
+    res = draft_api_call(
+        language="r",
+        tickers=["AAPL.O"],
+        fields=["TR.GrossProfit", "TR.Missing"],
+        mapping_notes=[
+            {"office_field": "TR.GrossProfit", "_target_fcc": "SGRP", "coa": "SGRP"},
+            {"field": "TR.Missing", "_unresolved": True, "_notes": ["WARNING: not found"]},
+        ],
+    )
+    # Both fields should be in the fields <- c(...) line
+    assert '"TR.GrossProfit"' in res
+    assert '"TR.Missing"' in res
+
+
+def test_draft_api_call_unresolved_field_count():
+    """N mapping notes in → N fields in generated code (no silent dropping)."""
+    notes = [
+        {"office_field": "TR.A", "_target_fcc": "SA", "coa": "RA"},
+        {"field": "TR.B", "category": "Pricing", "_source": "data_dictionary"},
+        {"field": "TR.C", "_unresolved": True, "_notes": ["WARNING: not found"]},
+        {"field": "TR.D", "_unresolved": True, "_notes": ["WARNING: not found"]},
+    ]
+    res = draft_api_call(
+        language="python",
+        tickers=["AAPL.O"],
+        fields=["TR.A", "TR.B", "TR.C", "TR.D"],
+        mapping_notes=notes,
+    )
+    assert "TR.A" in res
+    assert "TR.B" in res
+    assert "TR.C" in res
+    assert "TR.D" in res
+
+
+def test_draft_api_call_unresolved_with_parameters():
+    """Unresolved fields should not interfere with parameter generation."""
+    res = draft_api_call(
+        language="python",
+        tickers=["AAPL.O"],
+        fields=["TR.Missing"],
+        mapping_notes=[
+            {"field": "TR.Missing", "_unresolved": True, "_notes": ["WARNING: not found"]},
+        ],
+        parameters={"SDate": "2020-01-01", "EDate": "2024-12-31"},
+    )
+    assert "TR.Missing" in res
+    assert "parameters=" in res
+    assert "SDate" in res
+
+
+def test_draft_api_call_r_unresolved_with_parameters():
+    """R: Unresolved fields should not interfere with Parameters = list(...)."""
+    sig = {
+        "name": "rd_GetData",
+        "args": ["RDObject = rd_connection()", "rics", "Eikonformulas"],
+        "doc": "Test",
+    }
+    res = draft_api_call(
+        language="r",
+        tickers=["AAPL.O"],
+        fields=["TR.Missing"],
+        mapping_notes=[
+            {"field": "TR.Missing", "_unresolved": True, "_notes": ["WARNING: not found"]},
+        ],
+        signature=sig,
+        parameters={"Curn": "USD"},
+    )
+    assert "TR.Missing" in res
+    assert 'Parameters = list(Curn = "USD")' in res
+
+
+def test_draft_api_call_unresolved_empty_field_name():
+    """An unresolved note with an empty field name should be skipped gracefully."""
+    res = draft_api_call(
+        language="python",
+        tickers=["AAPL.O"],
+        fields=["TR.Real", ""],
+        mapping_notes=[
+            {"office_field": "TR.Real", "_target_fcc": "SR", "coa": "RR"},
+            {"field": "", "_unresolved": True, "_notes": ["WARNING: not found"]},
+        ],
+    )
+    # TR.Real should appear, empty field should be skipped
+    assert "TR.Real" in res
+    # Should not crash
+    assert "import lseg.data" in res
+
+
